@@ -17,6 +17,55 @@ python3 -m pip install -e ".[dev,plot]"
 
 If you do not want editable installation yet, run scripts from the repository root.
 
+## Homework Package Structure
+
+This repository follows the packaging homework structure, adapted for a real HHSA codebase:
+
+```text
+.
+├── README.md
+├── LICENSE
+├── LICENSE.txt
+├── requirements.txt
+├── pyproject.toml
+├── setup.cfg
+├── hhsa/
+│   ├── decomposition.py
+│   ├── frequency.py
+│   ├── pipeline.py
+│   └── statistics.py
+├── hhsa_tools/
+│   ├── __init__.py
+│   └── core.py
+├── examples/
+└── tests/
+```
+
+`hhsa` contains the research functions. `hhsa_tools` is the user-facing package required by the homework and exposes a class-based `HHSAAnalyzer`.
+
+To verify the homework import after local installation:
+
+```bash
+python3 -m pip install -e .
+python3 -c "import hhsa_tools; print(hhsa_tools.__version__)"
+```
+
+Example class-based use:
+
+```python
+import numpy as np
+from hhsa_tools import HHSAAnalyzer
+
+sample_rate = 500.0
+t = np.arange(0, 5, 1 / sample_rate)
+signal = np.sin(2 * np.pi * 12 * t)
+
+analyzer = HHSAAnalyzer(sample_rate=sample_rate, decomposition="iceemdan")
+result = analyzer.fit(signal)
+summary = analyzer.summarize(result)
+print(summary["mode_energy"])
+```
+
 ## Quick Verification
 
 Run the local tests:
