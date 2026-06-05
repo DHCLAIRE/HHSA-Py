@@ -15,5 +15,5 @@ Method: CEEMDAN as the 2-layers EMD.
 
 <a href="https://github.com/DHCLAIRE">
   <img src="https://avatars.githubusercontent.com/u/YOUR_PROFILE_ID?v=4?s=100" width="100px;" alt=""/>
-  <br /><sub><b>Your Name</b></sub>
+  <br /><sub><b>Ting</b></sub>
 </a>
