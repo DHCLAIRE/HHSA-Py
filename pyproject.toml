@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hhsa-py"
+version = "0.1.0"
+description = "Holo-Hilbert spectral analysis with ICEEMDAN-style decomposition, GZC, and quadrature frequency estimates."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "numpy>=1.23",
+  "scipy>=1.10",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+plot = ["matplotlib>=3.7", "pandas>=2"]
+
+[tool.setuptools.packages.find]
+include = ["hhsa*"]
