@@ -68,6 +68,16 @@ summary = analyzer.summarize(result)
 print(summary["mode_energy"])
 ```
 
+ICEEMDAN can also be used directly with a CEEMDAN-style callable class:
+
+```python
+from hhsa_tools import ICEEMDAN
+
+decomposer = ICEEMDAN(trials=100, epsilon=0.2, max_imf=6, seed=13)
+components = decomposer(signal)  # rows are IMF_1 ... IMF_k, then residue
+imfs, residue = decomposer.get_imfs_and_residue()
+```
+
 ## Quick Verification
 
 Run the local tests:

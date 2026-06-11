@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from hhsa import HHSAResult, marginal_spectrum, mode_energy, run_hhsa
+from hhsa import HHSAResult, ICEEMDAN, marginal_spectrum, mode_energy, run_hhsa
 
 
 @dataclass
