@@ -1,6 +1,6 @@
 """Holo-Hilbert spectral analysis helpers."""
 
-from .decomposition import ICEEMDAN, ceemdan, emd, iceemdan
+from .decomposition import ceemdan, emd, iceemdan
 from .frequency import frequency_transform, generalized_zero_crossing, quadrature_frequency
 from .pipeline import HHSAResult, run_hhsa
 from .statistics import (
@@ -15,7 +15,6 @@ from .statistics import (
 
 __all__ = [
     "HHSAResult",
-    "ICEEMDAN",
     "ceemdan",
     "emd",
     "frequency_transform",

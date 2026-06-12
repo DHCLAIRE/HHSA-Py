@@ -1,4 +1,9 @@
-"""Class-based HHSA interface for homework and notebooks."""
+"""Class-based HHSA interface for homework and notebooks.
+
+This module intentionally exposes one high-level tool: :class:`HHSAAnalyzer`.
+The analyzer stores repeated HHSA settings and delegates the numerical work to
+the lower-level functions in :mod:`hhsa`.
+"""
 
 from __future__ import annotations
 
@@ -6,12 +11,36 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from hhsa import HHSAResult, ICEEMDAN, mode_energy, run_hhsa
+from hhsa import HHSAResult, mode_energy, run_hhsa
 
 
 @dataclass
 class HHSAAnalyzer:
-    """Analyze one-dimensional non-stationary neural signals with HHSA."""
+    """Analyze one-dimensional non-stationary signals with HHSA.
+
+    Parameters
+    ----------
+    sample_rate:
+        Sampling rate of the input signal in Hz.
+    decomposition:
+        First- and second-layer decomposition method. Supported values are
+        ``"iceemdan"``, ``"ceemdan"``, and ``"emd"``.
+    frequency_method:
+        Instantaneous-frequency estimator. Use ``"quad"`` for Hilbert phase,
+        ``"gzc"`` for Generalized Zero-Crossing, or ``"hybrid"`` to combine
+        both.
+    max_imfs:
+        Maximum number of first-layer carrier IMFs to extract.
+    max_am_imfs:
+        Maximum number of second-layer amplitude-modulation IMFs to extract
+        from each carrier amplitude envelope.
+    ensemble_size:
+        Number of noise realizations for CEEMDAN/ICEEMDAN decompositions.
+    noise_width:
+        Relative noise scale for ensemble decompositions.
+    random_state:
+        Optional seed for reproducible ensemble noise.
+    """
 
     sample_rate: float
     decomposition: str = "iceemdan"
@@ -23,7 +52,20 @@ class HHSAAnalyzer:
     random_state: int | None = 13
 
     def fit(self, signal: np.ndarray) -> HHSAResult:
-        """Run the two-layer HHSA pipeline and return the full result."""
+        """Run the configured two-layer HHSA pipeline.
+
+        Parameters
+        ----------
+        signal:
+            One-dimensional time series to analyze.
+
+        Returns
+        -------
+        HHSAResult
+            Full pipeline output, including first-layer IMFs, second-layer
+            amplitude-envelope IMFs, instantaneous frequency/amplitude arrays,
+            HHT, holospectrum, and reconstruction diagnostics.
+        """
 
         return run_hhsa(
             signal,
@@ -38,7 +80,22 @@ class HHSAAnalyzer:
         )
 
     def summarize(self, result: HHSAResult, *, bins: int = 128) -> dict[str, np.ndarray | float]:
-        """Return common summary statistics for an HHSA result."""
+        """Collect common summary arrays from an HHSA result.
+
+        Parameters
+        ----------
+        result:
+            Output returned by :meth:`fit` or by :func:`hhsa.run_hhsa`.
+        bins:
+            Kept for backwards compatibility with older summaries. The current
+            summary uses the frequency bins already stored on ``result``.
+
+        Returns
+        -------
+        dict
+            Dictionary with mode energy, carrier and AM frequency bins,
+            marginal spectrum, HHT, holospectrum, and reconstruction error.
+        """
 
         energies = mode_energy(result.imfs)
         return {
