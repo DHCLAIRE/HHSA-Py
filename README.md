@@ -1,27 +1,168 @@
-# (TBD) Holo-Hilbert Spectral Analysis (HHSA) in Python
+# Holo-Hilbert Spectral Analysis (HHSA) in Python
 
 Python Authors: Ting & Codex
 
-This project builds a teachable HHSA pipeline for neural-signal processing:
+This repository implements a compact, inspectable Holo-Hilbert Spectral Analysis pipeline for one-dimensional neural and biomedical time series. The code is designed to be easy to compare with MATLAB while still exposing a clean Python package interface.
 
-1. Decompose the signal with EMD, CEEMDAN, or an ICEEMDAN-style method.
-2. Estimate instantaneous frequency with Generalized Zero-Crossing (GZC), quadrature/Hilbert phase, or a hybrid of both.
-3. Run the second EMD layer on the first-layer amplitude envelopes.
-4. Summarize modes with optional statistics.
+The pipeline follows the holospectrum workflow:
 
-The current code is intentionally compact so it is easy to inspect and compare against MATLAB.
+1. Decompose the signal into IMFs with EMD, CEEMDAN, or ICEEMDAN.
+2. Estimate instantaneous phase, frequency, and amplitude for each carrier IMF.
+3. Decompose each carrier IMF's instantaneous amplitude with a second-layer sift.
+4. Estimate amplitude-modulation frequency statistics from the second layer.
+5. Build Hilbert-Huang and Holo-Hilbert spectra.
 
 ## Install
+
+Install in editable mode from the repository root:
 
 ```bash
 python3 -m pip install -e ".[dev,plot]"
 ```
 
-If you do not want editable installation yet, run scripts from the repository root.
+For the full neuro-data workflow, install the optional neuro dependencies too:
 
-## Homework Package Structure
+```bash
+python3 -m pip install -e ".[dev,plot,neuro]"
+```
 
-This repository follows the packaging homework structure, adapted for a real HHSA codebase:
+Run the test suite:
+
+```bash
+python3 -m pytest -q
+```
+
+## Quick Start
+
+Use the class-based interface for notebooks and homework-style scripts:
+
+```python
+import numpy as np
+from hhsa_tools import HHSAAnalyzer
+
+sample_rate = 500.0
+t = np.arange(0, 5, 1 / sample_rate)
+signal = (1 + 0.4 * np.sin(2 * np.pi * 3 * t)) * np.sin(2 * np.pi * 18 * t)
+
+analyzer = HHSAAnalyzer(
+    sample_rate=sample_rate,
+    decomposition="iceemdan",
+    frequency_method="hybrid",
+    max_imfs=4,
+    max_am_imfs=3,
+    ensemble_size=16,
+    noise_width=0.1,
+)
+
+result = analyzer.fit(signal)
+summary = analyzer.summarize(result)
+
+print(result.imfs.shape)
+print(result.reconstruction_error)
+print(result.hht.shape)           # carrier frequency x time
+print(result.holospectrum.shape)  # carrier frequency x AM frequency
+```
+
+Use the functional interface when you want direct control:
+
+```python
+from hhsa import run_hhsa
+
+result = run_hhsa(
+    signal,
+    sample_rate,
+    decomposition="iceemdan",
+    frequency_method="hybrid",
+    max_imfs=4,
+    max_am_imfs=3,
+    carrier_hist=(1, 100, 128, "log"),
+    am_hist=(0.01, 32, 64, "log"),
+)
+```
+
+## Outputs
+
+`run_hhsa` returns an `HHSAResult` with the main arrays used in the Holo-Hilbert pipeline:
+
+- `imfs`, `residue`: first-layer carrier IMFs and final residue.
+- `amplitude`, `phase`, `frequency`: instantaneous amplitude, phase, and carrier frequency for first-layer IMFs.
+- `am_imfs`, `am_residues`: second-layer IMFs from each first-layer amplitude envelope.
+- `am_amplitude`, `am_phase`, `am_frequency`: instantaneous amplitude, phase, and AM frequency for second-layer IMFs.
+- `carrier_bins`, `am_bins`: frequency bin centers used for spectra.
+- `marginal`: 1D Hilbert-Huang spectrum over carrier frequency.
+- `hht`: 2D Hilbert-Huang spectrum over carrier frequency x time.
+- `holospectrum`: time-averaged Holo-Hilbert spectrum over carrier frequency x AM frequency.
+
+The reconstruction helpers are:
+
+```python
+reconstructed = result.reconstruction
+error = result.reconstruction_error
+```
+
+## ICEEMDAN
+
+ICEEMDAN is available as both a function and a CEEMDAN-style callable class.
+
+```python
+from hhsa import iceemdan
+from hhsa_tools import ICEEMDAN
+
+imfs, residue = iceemdan(signal, ensemble_size=100, noise_width=0.2, random_state=13)
+
+decomposer = ICEEMDAN(trials=100, epsilon=0.2, max_imf=6, seed=13)
+components = decomposer(signal)  # rows are IMF_1 ... IMF_k, then residue
+imfs, residue = decomposer.get_imfs_and_residue()
+```
+
+## HHSA Workflow
+
+1. Prepare a one-dimensional signal.
+   Remove NaNs, detrend if needed, and keep the sampling rate in Hz.
+
+2. Choose the first-layer decomposition.
+   Use `decomposition="iceemdan"` for the main HHSA direction, `decomposition="ceemdan"` as a CEEMDAN baseline, and `decomposition="emd"` for fast debugging.
+
+3. Choose the instantaneous-frequency estimator.
+   Use `frequency_method="quad"` for Hilbert/quadrature phase, `"gzc"` for Generalized Zero-Crossing, or `"hybrid"` to combine both estimates.
+
+4. Run the second layer.
+   `run_hhsa` automatically decomposes every first-layer instantaneous-amplitude trace and stores the second-layer outputs in `result.am_imfs`, `result.am_amplitude`, and `result.am_frequency`.
+
+5. Inspect spectra and quality.
+   Check `result.reconstruction_error`, IMF energies with `mode_energy(result.imfs)`, the 2D HHT in `result.hht`, and the holospectrum in `result.holospectrum`.
+
+## Verification
+
+Run the included open-data example:
+
+```bash
+python3 examples/verify_open_ecg.py
+```
+
+The script first tries `scipy.datasets.electrocardiogram`, an open ECG signal derived from the MIT-BIH Arrhythmia Database. If SciPy cannot access the dataset cache, it falls back to a synthetic amplitude-modulated signal so the code path can still be checked offline.
+
+For MATLAB comparison, export the same one-dimensional signal and Python outputs as `.mat` files, run MATLAB ICEEMDAN/HHT on that exact vector, and compare IMF count, reconstruction error, dominant instantaneous frequency, mode energy, and holospectrum peaks.
+
+## OpenNeuro Target
+
+Project pitch dataset:
+
+- Dataset: `ds004078`, version `1.2.1`
+- Source: <https://openneuro.org/datasets/ds004078/versions/1.2.1>
+- Modality: MEG and fMRI
+- Task: Chinese naturalistic story listening and comprehension
+
+Recommended first MEG verification:
+
+1. Download one subject and one short MEG run with OpenNeuro.
+2. Load the MEG data with MNE-Python.
+3. Pick one cleaned channel or source component.
+4. Crop 5-20 seconds for fast iteration.
+5. Run `run_hhsa(..., decomposition="iceemdan", frequency_method="hybrid")`.
+6. Compare Python and MATLAB outputs on exactly the same cropped vector.
+
+## Package Structure
 
 ```text
 .
@@ -43,131 +184,14 @@ This repository follows the packaging homework structure, adapted for a real HHS
 └── tests/
 ```
 
-`hhsa` contains the research functions. `hhsa_tools` is the user-facing package required by the homework and exposes a class-based `HHSAAnalyzer`.
-
-To verify the homework import after local installation:
-
-```bash
-python3 -m pip install -e .
-python3 -c "import hhsa_tools; print(hhsa_tools.__version__)"
-```
-
-Example class-based use:
-
-```python
-import numpy as np
-from hhsa_tools import HHSAAnalyzer
-
-sample_rate = 500.0
-t = np.arange(0, 5, 1 / sample_rate)
-signal = np.sin(2 * np.pi * 12 * t)
-
-analyzer = HHSAAnalyzer(sample_rate=sample_rate, decomposition="iceemdan")
-result = analyzer.fit(signal)
-summary = analyzer.summarize(result)
-print(summary["mode_energy"])
-```
-
-ICEEMDAN can also be used directly with a CEEMDAN-style callable class:
-
-```python
-from hhsa_tools import ICEEMDAN
-
-decomposer = ICEEMDAN(trials=100, epsilon=0.2, max_imf=6, seed=13)
-components = decomposer(signal)  # rows are IMF_1 ... IMF_k, then residue
-imfs, residue = decomposer.get_imfs_and_residue()
-```
-
-## Quick Verification
-
-Run the local tests:
-
-```bash
-python3 -m pytest -q
-```
-
-Run the open-data verification example:
-
-```bash
-python3 examples/verify_open_ecg.py
-```
-
-The script first tries `scipy.datasets.electrocardiogram`, an open ECG signal derived from the MIT-BIH Arrhythmia Database. If SciPy cannot access the dataset cache, it uses a synthetic amplitude-modulated signal so the code path can still be checked offline.
-
-## Minimal Use
-
-```python
-import numpy as np
-from hhsa import run_hhsa, marginal_spectrum
-
-sample_rate = 500.0
-t = np.arange(0, 5, 1 / sample_rate)
-signal = (1 + 0.4 * np.sin(2 * np.pi * 3 * t)) * np.sin(2 * np.pi * 18 * t)
-
-result = run_hhsa(
-    signal,
-    sample_rate,
-    decomposition="iceemdan",
-    frequency_method="hybrid",
-    max_imfs=4,
-    max_am_imfs=3,
-    ensemble_size=16,
-    noise_width=0.1,
-)
-
-freq_bins, marginal = marginal_spectrum(result.frequency, result.amplitude)
-print(result.imfs.shape)
-print(result.reconstruction_error)
-print(result.hht.shape)           # carrier frequency x time
-print(result.holospectrum.shape)  # carrier frequency x AM frequency
-```
-
-## Step-By-Step HHSA Workflow
-
-1. Prepare the signal.
-   Use a one-dimensional channel or component, remove NaNs, detrend if needed, and keep the sampling rate in Hz.
-
-2. Run the first decomposition layer.
-   Use `decomposition="iceemdan"` for your BrainHack direction. Use `decomposition="ceemdan"` when you want the closer CEEMDAN baseline, and `decomposition="emd"` for quick debugging.
-
-3. Estimate HHT frequency.
-   Use `frequency_method="quad"` for Hilbert/quadrature phase, `"gzc"` for Generalized Zero-Crossing, or `"hybrid"` to merge both estimates.
-
-4. Run the second decomposition layer.
-   `run_hhsa` automatically decomposes every first-layer amplitude envelope. These second-layer modes are stored in `result.am_imfs`; their modulation amplitudes/frequencies are in `result.am_amplitude` and `result.am_frequency`.
-
-5. Inspect quality.
-   Check `result.reconstruction_error`, IMF energies with `mode_energy(result.imfs)`, `result.marginal`, `result.hht`, and `result.holospectrum`.
-
-6. Verify on open data.
-   Start with the ECG example because it is small. Then download the Brain Language Processing dataset from OpenNeuro: `ds004078`, version `1.2.1`.
-
-7. Compare with MATLAB.
-   Export the same one-dimensional signal and Python outputs as `.mat` files, run MATLAB ICEEMDAN/HHT on the same signal, and compare IMF count, reconstruction error, dominant instantaneous frequency, and mode energy.
-
-## OpenNeuro Target
-
-Project pitch dataset:
-
-- Dataset: `ds004078`, version `1.2.1`
-- Source: <https://openneuro.org/datasets/ds004078/versions/1.2.1>
-- Modality: MEG and fMRI
-- Task: Chinese naturalistic story listening and comprehension
-
-Recommended first MEG verification:
-
-1. Download one subject and one short MEG run with OpenNeuro.
-2. Load the MEG data with MNE-Python.
-3. Pick one cleaned channel or source component.
-4. Crop 5-20 seconds for fast iteration.
-5. Run `run_hhsa(..., decomposition="iceemdan", frequency_method="hybrid")`.
-6. Compare Python results with MATLAB on exactly the same cropped vector.
+`hhsa` contains the research functions. `hhsa_tools` exposes the class-based interface for notebooks and coursework.
 
 ## Code Map
 
-- `hhsa/decomposition.py`: EMD, CEEMDAN, and ICEEMDAN-style decomposition.
-- `hhsa/frequency.py`: GZC and quadrature frequency estimation.
-- `hhsa/pipeline.py`: two-layer HHSA pipeline.
-- `hhsa/statistics.py`: marginal spectrum, mode energy, entropy, and orthogonality index.
+- `hhsa/decomposition.py`: EMD, CEEMDAN, ICEEMDAN, and the `ICEEMDAN` class.
+- `hhsa/frequency.py`: quadrature/Hilbert and Generalized Zero-Crossing frequency estimators.
+- `hhsa/pipeline.py`: two-layer HHSA pipeline and `HHSAResult`.
+- `hhsa/statistics.py`: mode statistics, Hilbert-Huang spectrum, and holospectrum helpers.
+- `hhsa_tools/core.py`: class-based `HHSAAnalyzer`.
 - `examples/verify_open_ecg.py`: runnable verification example.
-- `tests/test_hhsa.py`: focused tests for frequency estimation and the HHSA pipeline.
+- `tests/`: focused tests for decomposition, frequency estimation, and HHSA outputs.
