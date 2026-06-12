@@ -37,6 +37,9 @@ def test_hhsa_pipeline_returns_modes_for_am_signal():
     assert result.imfs.shape[1] == x.size
     assert result.frequency.shape == result.imfs.shape
     assert len(result.am_imfs) == result.imfs.shape[0]
+    assert len(result.am_amplitude) == result.imfs.shape[0]
+    assert result.hht.shape == (result.carrier_bins.size, x.size)
+    assert result.holospectrum.shape == (result.carrier_bins.size, result.am_bins.size)
     assert np.all(mode_energy(result.imfs) > 0)
 
 

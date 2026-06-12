@@ -3,7 +3,15 @@
 from .decomposition import ICEEMDAN, ceemdan, emd, iceemdan
 from .frequency import frequency_transform, generalized_zero_crossing, quadrature_frequency
 from .pipeline import HHSAResult, run_hhsa
-from .statistics import marginal_spectrum, mode_energy, normalized_entropy, orthogonality_index
+from .statistics import (
+    hilbert_huang_spectrum,
+    holospectrum,
+    marginal_spectrum,
+    mode_energy,
+    normalized_entropy,
+    orthogonality_index,
+    spectrum_bin_edges,
+)
 
 __all__ = [
     "HHSAResult",
@@ -12,6 +20,8 @@ __all__ = [
     "emd",
     "frequency_transform",
     "generalized_zero_crossing",
+    "hilbert_huang_spectrum",
+    "holospectrum",
     "iceemdan",
     "marginal_spectrum",
     "mode_energy",
@@ -19,4 +29,5 @@ __all__ = [
     "orthogonality_index",
     "quadrature_frequency",
     "run_hhsa",
+    "spectrum_bin_edges",
 ]

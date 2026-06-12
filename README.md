@@ -118,6 +118,8 @@ result = run_hhsa(
 freq_bins, marginal = marginal_spectrum(result.frequency, result.amplitude)
 print(result.imfs.shape)
 print(result.reconstruction_error)
+print(result.hht.shape)           # carrier frequency x time
+print(result.holospectrum.shape)  # carrier frequency x AM frequency
 ```
 
 ## Step-By-Step HHSA Workflow
@@ -132,10 +134,10 @@ print(result.reconstruction_error)
    Use `frequency_method="quad"` for Hilbert/quadrature phase, `"gzc"` for Generalized Zero-Crossing, or `"hybrid"` to merge both estimates.
 
 4. Run the second decomposition layer.
-   `run_hhsa` automatically decomposes every first-layer amplitude envelope. These second-layer modes are stored in `result.am_imfs`; their modulation frequencies are in `result.am_frequency`.
+   `run_hhsa` automatically decomposes every first-layer amplitude envelope. These second-layer modes are stored in `result.am_imfs`; their modulation amplitudes/frequencies are in `result.am_amplitude` and `result.am_frequency`.
 
 5. Inspect quality.
-   Check `result.reconstruction_error`, IMF energies with `mode_energy(result.imfs)`, and the Hilbert marginal spectrum with `marginal_spectrum`.
+   Check `result.reconstruction_error`, IMF energies with `mode_energy(result.imfs)`, `result.marginal`, `result.hht`, and `result.holospectrum`.
 
 6. Verify on open data.
    Start with the ECG example because it is small. Then download the Brain Language Processing dataset from OpenNeuro: `ds004078`, version `1.2.1`.

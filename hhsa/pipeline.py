@@ -9,6 +9,7 @@ import numpy as np
 
 from .decomposition import ceemdan, emd, iceemdan
 from .frequency import frequency_transform
+from .statistics import SpectrumBins, hilbert_huang_spectrum, holospectrum, spectrum_bin_edges
 
 DecompositionMethod = Literal["emd", "ceemdan", "iceemdan"]
 FrequencyMethod = Literal["quad", "gzc", "hybrid"]
@@ -25,7 +26,14 @@ class HHSAResult:
     frequency: np.ndarray
     am_imfs: list[np.ndarray]
     am_residues: list[np.ndarray]
+    am_amplitude: list[np.ndarray]
+    am_phase: list[np.ndarray]
     am_frequency: list[np.ndarray]
+    carrier_bins: np.ndarray
+    am_bins: np.ndarray
+    marginal: np.ndarray
+    hht: np.ndarray
+    holospectrum: np.ndarray
 
     @property
     def reconstruction(self) -> np.ndarray:
@@ -86,12 +94,24 @@ def run_hhsa(
     random_state: int | None = 13,
     max_siftings: int = 20,
     stop_sd: float = 0.2,
+    carrier_hist: SpectrumBins | None = None,
+    am_hist: SpectrumBins | None = None,
 ) -> HHSAResult:
-    """Run HHSA: layer-1 signal IMFs, then layer-2 amplitude-envelope IMFs."""
+    """Run HHSA using the Holo-Hilbert spectrum pipeline.
+
+    The stages mirror the holospectrum tutorial:
+    first-layer decomposition, instantaneous phase/frequency/amplitude,
+    second-layer decomposition of each instantaneous-amplitude trace, then
+    Hilbert-Huang and Holo-Hilbert spectral histograms.
+    """
 
     x = np.asarray(signal, dtype=float)
     if x.ndim != 1:
         raise ValueError("signal must be one-dimensional")
+    if carrier_hist is None:
+        carrier_hist = (max(sample_rate / x.size, 1e-6), sample_rate / 2.0, 128, "log")
+    if am_hist is None:
+        am_hist = (max(sample_rate / x.size, 1e-6), sample_rate / 4.0, 64, "log")
 
     imfs, residue = _decompose(
         x,
@@ -105,11 +125,33 @@ def run_hhsa(
     )
     if imfs.size == 0:
         empty = np.empty((0, x.size))
-        return HHSAResult(x, sample_rate, empty, residue, empty, empty, empty, [], [], [])
+        carrier_bins, marginal, hht = hilbert_huang_spectrum(empty, empty, carrier_hist)
+        am_bins, _ = spectrum_bin_edges(am_hist)
+        return HHSAResult(
+            x,
+            sample_rate,
+            empty,
+            residue,
+            empty,
+            empty,
+            empty,
+            [],
+            [],
+            [],
+            [],
+            [],
+            carrier_bins,
+            am_bins,
+            marginal,
+            hht,
+            np.zeros((carrier_bins.size, am_bins.size)),
+        )
 
     amplitude, phase, frequency = frequency_transform(imfs, sample_rate, method=frequency_method)
     am_imfs: list[np.ndarray] = []
     am_residues: list[np.ndarray] = []
+    am_amplitude: list[np.ndarray] = []
+    am_phase: list[np.ndarray] = []
     am_frequency: list[np.ndarray] = []
 
     for mode_index, envelope in enumerate(amplitude):
@@ -127,10 +169,17 @@ def run_hhsa(
         am_imfs.append(modes)
         am_residues.append(am_residue)
         if modes.size:
-            _, _, am_freq = frequency_transform(modes, sample_rate, method=frequency_method)
+            am_amp, am_ip, am_freq = frequency_transform(modes, sample_rate, method=frequency_method)
         else:
+            am_amp = np.empty((0, x.size))
+            am_ip = np.empty((0, x.size))
             am_freq = np.empty((0, x.size))
+        am_amplitude.append(am_amp)
+        am_phase.append(am_ip)
         am_frequency.append(am_freq)
+
+    carrier_bins, marginal, hht = hilbert_huang_spectrum(frequency, amplitude, carrier_hist)
+    carrier_bins, am_bins, holo = holospectrum(frequency, am_frequency, am_amplitude, carrier_hist, am_hist)
 
     return HHSAResult(
         signal=x,
@@ -142,5 +191,12 @@ def run_hhsa(
         frequency=frequency,
         am_imfs=am_imfs,
         am_residues=am_residues,
+        am_amplitude=am_amplitude,
+        am_phase=am_phase,
         am_frequency=am_frequency,
+        carrier_bins=carrier_bins,
+        am_bins=am_bins,
+        marginal=marginal,
+        hht=hht,
+        holospectrum=holo,
     )

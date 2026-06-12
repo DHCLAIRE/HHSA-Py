@@ -56,3 +56,108 @@ def marginal_spectrum(
     hist, edges = np.histogram(freq[mask], bins=bins, range=freq_range, weights=amp[mask] ** 2)
     centers = 0.5 * (edges[:-1] + edges[1:])
     return centers, hist
+
+
+SpectrumBins = tuple[float, float, int, str]
+
+
+def spectrum_bin_edges(hist: SpectrumBins) -> tuple[np.ndarray, np.ndarray]:
+    """Return histogram centers and edges from an EMD-style bin definition."""
+
+    low, high, count, scale = hist
+    if low <= 0 and scale == "log":
+        raise ValueError("log-spaced bins require a positive lower bound")
+    if high <= low:
+        raise ValueError("histogram upper bound must be greater than lower bound")
+    if count < 1:
+        raise ValueError("histogram bin count must be positive")
+    if scale == "log":
+        edges = np.geomspace(low, high, count + 1)
+        centers = np.sqrt(edges[:-1] * edges[1:])
+    elif scale == "linear":
+        edges = np.linspace(low, high, count + 1)
+        centers = 0.5 * (edges[:-1] + edges[1:])
+    else:
+        raise ValueError("histogram scale must be 'linear' or 'log'")
+    return centers, edges
+
+
+def hilbert_huang_spectrum(
+    frequency: np.ndarray,
+    amplitude: np.ndarray,
+    hist: SpectrumBins,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Compute marginal and time-resolved Hilbert-Huang spectra.
+
+    Parameters use the package convention ``(n_modes, n_samples)``. Power is
+    accumulated as squared instantaneous amplitude.
+    """
+
+    freq = np.asarray(frequency, dtype=float)
+    amp = np.asarray(amplitude, dtype=float)
+    if freq.shape != amp.shape or freq.ndim != 2:
+        raise ValueError("frequency and amplitude must both have shape (n_modes, n_samples)")
+
+    centers, edges = spectrum_bin_edges(hist)
+    time_frequency = np.zeros((centers.size, freq.shape[1]))
+    for mode_freq, mode_amp in zip(freq, amp):
+        for sample_index, (f, a) in enumerate(zip(mode_freq, mode_amp)):
+            if np.isfinite(f) and np.isfinite(a) and edges[0] <= f <= edges[-1]:
+                bin_index = np.searchsorted(edges, f, side="right") - 1
+                bin_index = min(max(bin_index, 0), centers.size - 1)
+                time_frequency[bin_index, sample_index] += a**2
+
+    marginal = time_frequency.sum(axis=1)
+    return centers, marginal, time_frequency
+
+
+def holospectrum(
+    carrier_frequency: np.ndarray,
+    am_frequency: list[np.ndarray],
+    am_amplitude: list[np.ndarray],
+    carrier_hist: SpectrumBins,
+    am_hist: SpectrumBins,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Compute a time-averaged Holo-Hilbert spectrum.
+
+    ``carrier_frequency`` has shape ``(n_carrier_modes, n_samples)``. Each
+    second-layer entry in ``am_frequency`` and ``am_amplitude`` has shape
+    ``(n_am_modes, n_samples)`` for the corresponding carrier IMF.
+    """
+
+    carrier = np.asarray(carrier_frequency, dtype=float)
+    if carrier.ndim != 2:
+        raise ValueError("carrier_frequency must have shape (n_modes, n_samples)")
+    if len(am_frequency) != carrier.shape[0] or len(am_amplitude) != carrier.shape[0]:
+        raise ValueError("second-layer lists must have one entry per carrier IMF")
+
+    carrier_centers, carrier_edges = spectrum_bin_edges(carrier_hist)
+    am_centers, am_edges = spectrum_bin_edges(am_hist)
+    holo = np.zeros((carrier_centers.size, am_centers.size))
+
+    for mode_index, carrier_freq in enumerate(carrier):
+        am_freq = np.asarray(am_frequency[mode_index], dtype=float)
+        am_amp = np.asarray(am_amplitude[mode_index], dtype=float)
+        if am_freq.size == 0 or am_amp.size == 0:
+            continue
+        if am_freq.shape != am_amp.shape or am_freq.ndim != 2:
+            raise ValueError("each second-layer frequency/amplitude pair must have shape (n_am_modes, n_samples)")
+        if am_freq.shape[1] != carrier.shape[1]:
+            raise ValueError("second-layer sample count must match carrier_frequency")
+
+        for layer_freq, layer_amp in zip(am_freq, am_amp):
+            for sample_index, (am_f, am_a) in enumerate(zip(layer_freq, layer_amp)):
+                carrier_f = carrier_freq[sample_index]
+                if not (np.isfinite(carrier_f) and np.isfinite(am_f) and np.isfinite(am_a)):
+                    continue
+                if not (carrier_edges[0] <= carrier_f <= carrier_edges[-1]):
+                    continue
+                if not (am_edges[0] <= am_f <= am_edges[-1]):
+                    continue
+                carrier_bin = np.searchsorted(carrier_edges, carrier_f, side="right") - 1
+                am_bin = np.searchsorted(am_edges, am_f, side="right") - 1
+                carrier_bin = min(max(carrier_bin, 0), carrier_centers.size - 1)
+                am_bin = min(max(am_bin, 0), am_centers.size - 1)
+                holo[carrier_bin, am_bin] += am_a**2
+
+    return carrier_centers, am_centers, holo

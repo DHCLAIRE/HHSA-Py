@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from hhsa import HHSAResult, ICEEMDAN, marginal_spectrum, mode_energy, run_hhsa
+from hhsa import HHSAResult, ICEEMDAN, mode_energy, run_hhsa
 
 
 @dataclass
@@ -40,11 +40,13 @@ class HHSAAnalyzer:
     def summarize(self, result: HHSAResult, *, bins: int = 128) -> dict[str, np.ndarray | float]:
         """Return common summary statistics for an HHSA result."""
 
-        freq_bins, marginal = marginal_spectrum(result.frequency, result.amplitude, bins=bins)
         energies = mode_energy(result.imfs)
         return {
             "mode_energy": energies,
-            "frequency_bins": freq_bins,
-            "marginal_spectrum": marginal,
+            "frequency_bins": result.carrier_bins,
+            "marginal_spectrum": result.marginal,
+            "hht": result.hht,
+            "am_frequency_bins": result.am_bins,
+            "holospectrum": result.holospectrum,
             "reconstruction_error": result.reconstruction_error,
         }
