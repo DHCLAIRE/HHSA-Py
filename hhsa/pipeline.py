@@ -11,12 +11,17 @@ from .decomposition import ceemdan, emd, iceemdan
 from .frequency import frequency_transform
 from .statistics import SpectrumBins, hilbert_huang_spectrum, holospectrum, spectrum_bin_edges
 
+# Supported first- and second-layer decomposition method names.
 DecompositionMethod = Literal["emd", "ceemdan", "iceemdan"]
+
+# Supported instantaneous-frequency estimator names.
 FrequencyMethod = Literal["quad", "gzc", "hybrid"]
 
 
 @dataclass
 class HHSAResult:
+    """Container for all arrays produced by the two-layer HHSA pipeline."""
+
     signal: np.ndarray
     sample_rate: float
     imfs: np.ndarray
@@ -37,10 +42,14 @@ class HHSAResult:
 
     @property
     def reconstruction(self) -> np.ndarray:
+        """Reconstruct the signal from first-layer IMFs and final residue."""
+
         return self.imfs.sum(axis=0) + self.residue
 
     @property
     def reconstruction_error(self) -> float:
+        """Return relative reconstruction error against the original signal."""
+
         denom = np.linalg.norm(self.signal) + np.finfo(float).eps
         return float(np.linalg.norm(self.signal - self.reconstruction) / denom)
 
@@ -56,6 +65,8 @@ def _decompose(
     max_siftings: int,
     stop_sd: float,
 ) -> tuple[np.ndarray, np.ndarray]:
+    """Dispatch to the requested decomposition function with shared settings."""
+
     if method == "emd":
         return emd(signal, max_imfs=max_imfs, max_siftings=max_siftings, stop_sd=stop_sd)
     if method == "ceemdan":

@@ -8,12 +8,16 @@ from scipy.signal import hilbert
 
 
 def _sample_rate_to_dt(sample_rate: float) -> float:
+    """Validate a positive sample rate and return its sampling interval."""
+
     if sample_rate <= 0:
         raise ValueError("sample_rate must be positive")
     return 1.0 / sample_rate
 
 
 def _zero_crossing_times(x: np.ndarray, sample_rate: float) -> np.ndarray:
+    """Estimate sub-sample zero-crossing times by linear interpolation."""
+
     signs = np.signbit(x)
     crossings = np.flatnonzero(signs[1:] != signs[:-1])
     times = []
@@ -25,12 +29,16 @@ def _zero_crossing_times(x: np.ndarray, sample_rate: float) -> np.ndarray:
 
 
 def _extrema_times(x: np.ndarray, sample_rate: float) -> np.ndarray:
+    """Return times of local turning points estimated from derivative sign changes."""
+
     dx = np.diff(x)
     turning = np.flatnonzero(np.signbit(dx[1:]) != np.signbit(dx[:-1])) + 1
     return turning / sample_rate
 
 
 def _interp_frequency(event_times: np.ndarray, n: int, sample_rate: float, period_multiplier: float) -> np.ndarray:
+    """Interpolate instantaneous frequency from periodic event timings."""
+
     if event_times.size < 2:
         return np.full(n, np.nan)
     dt = np.diff(event_times)

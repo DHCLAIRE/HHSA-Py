@@ -17,6 +17,8 @@ from scipy.signal import argrelextrema
 
 @dataclass(frozen=True)
 class EMDConfig:
+    """Configuration values that control the compact EMD sifting loop."""
+
     max_imfs: int | None = None
     max_siftings: int = 50
     stop_sd: float = 0.2
@@ -25,6 +27,8 @@ class EMDConfig:
 
 
 def _as_1d(signal: np.ndarray) -> np.ndarray:
+    """Convert input to a float 1-D array and validate its minimum length."""
+
     x = np.asarray(signal, dtype=float)
     if x.ndim != 1:
         raise ValueError("signal must be one-dimensional")
@@ -34,6 +38,8 @@ def _as_1d(signal: np.ndarray) -> np.ndarray:
 
 
 def _extrema_indices(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Return sample indices of local maxima and local minima."""
+
     maxima = argrelextrema(x, np.greater)[0]
     minima = argrelextrema(x, np.less)[0]
     return maxima, minima
@@ -47,6 +53,8 @@ def _is_terminal_residue(x: np.ndarray) -> bool:
 
 
 def _pad_extrema(indices: np.ndarray, n: int) -> np.ndarray:
+    """Add signal endpoints to extrema indices for envelope interpolation."""
+
     if indices.size == 0:
         return np.array([0, n - 1])
     padded = np.unique(np.concatenate(([0], indices, [n - 1]))).astype(int)
@@ -54,6 +62,8 @@ def _pad_extrema(indices: np.ndarray, n: int) -> np.ndarray:
 
 
 def _envelope(x: np.ndarray, indices: np.ndarray) -> np.ndarray:
+    """Interpolate an upper or lower envelope through extrema locations."""
+
     n = x.size
     t = np.arange(n)
     knots = _pad_extrema(indices, n)
@@ -64,6 +74,8 @@ def _envelope(x: np.ndarray, indices: np.ndarray) -> np.ndarray:
 
 
 def _mean_envelope(x: np.ndarray) -> np.ndarray:
+    """Return the pointwise mean of upper and lower EMD envelopes."""
+
     maxima, minima = _extrema_indices(x)
     upper = _envelope(x, maxima)
     lower = _envelope(x, minima)
@@ -81,6 +93,8 @@ def _zero_crossing_count(x: np.ndarray) -> int:
 
 
 def _has_small_envelope_mean(candidate: np.ndarray, *, tolerance: float) -> bool:
+    """Check whether an IMF candidate has a small normalized envelope mean."""
+
     mean = _mean_envelope(candidate)
     scale = np.linalg.norm(candidate) + np.finfo(float).eps
     return bool(np.linalg.norm(mean) / scale <= tolerance)
@@ -97,6 +111,8 @@ def _is_imf(candidate: np.ndarray, *, envelope_mean_tol: float = 0.1) -> bool:
 
 
 def _sift_first_imf(signal: np.ndarray, config: EMDConfig) -> np.ndarray:
+    """Extract one IMF candidate from a signal by repeated envelope sifting."""
+
     h = signal.copy()
     eps = np.finfo(float).eps
     for _ in range(config.max_siftings):
@@ -145,6 +161,8 @@ def emd(
 
 
 def _normalize_noise(noise: np.ndarray) -> np.ndarray:
+    """Scale a noise vector to unit standard deviation when possible."""
+
     std = np.std(noise)
     if std == 0:
         return noise
@@ -293,4 +311,3 @@ def iceemdan(
     modes = np.vstack(imfs) * x_std
     residue = current_mean * x_std
     return modes, residue
-

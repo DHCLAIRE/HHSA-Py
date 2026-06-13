@@ -58,6 +58,7 @@ def marginal_spectrum(
     return centers, hist
 
 
+# Histogram definition: low frequency, high frequency, bin count, and scale.
 SpectrumBins = tuple[float, float, int, str]
 
 
