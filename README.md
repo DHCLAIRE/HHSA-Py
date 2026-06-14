@@ -38,13 +38,13 @@ Use the class-based interface for notebooks and homework-style scripts:
 
 ```python
 import numpy as np
-from hhsa_tools import HHSAAnalyzer
+from hhsa_tools import HHSAPipeline
 
 sample_rate = 500.0
 t = np.arange(0, 5, 1 / sample_rate)
 signal = (1 + 0.4 * np.sin(2 * np.pi * 3 * t)) * np.sin(2 * np.pi * 18 * t)
 
-analyzer = HHSAAnalyzer(
+pipeline = HHSAPipeline(
     sample_rate=sample_rate,
     decomposition="iceemdan",
     frequency_method="hybrid",
@@ -54,8 +54,8 @@ analyzer = HHSAAnalyzer(
     noise_width=0.1,
 )
 
-result = analyzer.fit(signal)
-summary = analyzer.summarize(result)
+result = pipeline.fit(signal)
+summary = pipeline.summarize(result)
 
 print(result.imfs.shape)
 print(result.reconstruction_error)
@@ -185,17 +185,17 @@ Recommended first MEG verification:
 
 ### `hhsa_tools`
 
-- `HHSAAnalyzer(sample_rate, ...)`: notebook-friendly class wrapper around the full HHSA pipeline. Store common analysis settings once, then call `fit(signal)` for each signal.
-- `HHSAAnalyzer.sample_rate`: sampling rate in Hz, used by all frequency estimates.
-- `HHSAAnalyzer.decomposition`: decomposition method for both HHSA layers. Use `"iceemdan"`, `"ceemdan"`, or `"emd"`.
-- `HHSAAnalyzer.frequency_method`: instantaneous-frequency method. Use `"quad"`, `"gzc"`, or `"hybrid"`.
-- `HHSAAnalyzer.max_imfs`: maximum number of first-layer carrier IMFs.
-- `HHSAAnalyzer.max_am_imfs`: maximum number of second-layer amplitude-modulation IMFs per carrier.
-- `HHSAAnalyzer.ensemble_size`: number of noise realizations for CEEMDAN/ICEEMDAN.
-- `HHSAAnalyzer.noise_width`: relative noise scale for ensemble decomposition.
-- `HHSAAnalyzer.random_state`: seed used for reproducible ensemble noise.
-- `HHSAAnalyzer.fit(signal)`: runs `run_hhsa` with the analyzer's configured decomposition, frequency, and ensemble parameters. It returns the full `HHSAResult`.
-- `HHSAAnalyzer.summarize(result)`: returns common summary outputs from an `HHSAResult`, including mode energy, frequency bins, marginal spectrum, HHT, holospectrum, and reconstruction error. The optional `bins` argument is retained for compatibility; current summaries use the bins stored on `result`.
+- `HHSAPipeline(sample_rate, ...)`: notebook-friendly class wrapper around the full HHSA pipeline. Store common analysis settings once, then call `fit(signal)` for each signal.
+- `HHSAPipeline.sample_rate`: sampling rate in Hz, used by all frequency estimates.
+- `HHSAPipeline.decomposition`: decomposition method for both HHSA layers. Use `"iceemdan"`, `"ceemdan"`, or `"emd"`.
+- `HHSAPipeline.frequency_method`: instantaneous-frequency method. Use `"quad"`, `"gzc"`, or `"hybrid"`.
+- `HHSAPipeline.max_imfs`: maximum number of first-layer carrier IMFs.
+- `HHSAPipeline.max_am_imfs`: maximum number of second-layer amplitude-modulation IMFs per carrier.
+- `HHSAPipeline.ensemble_size`: number of noise realizations for CEEMDAN/ICEEMDAN.
+- `HHSAPipeline.noise_width`: relative noise scale for ensemble decomposition.
+- `HHSAPipeline.random_state`: seed used for reproducible ensemble noise.
+- `HHSAPipeline.fit(signal)`: runs `run_hhsa` with the pipeline's stored decomposition, frequency, and ensemble parameters. It returns the full `HHSAResult`.
+- `HHSAPipeline.summarize(result)`: returns common summary outputs from an `HHSAResult`, including mode energy, frequency bins, marginal spectrum, HHT, holospectrum, and reconstruction error. The optional `bins` argument is retained for compatibility; current summaries use the bins stored on `result`.
 
 ### `hhsa.pipeline`
 
@@ -232,6 +232,6 @@ Recommended first MEG verification:
 - `hhsa/frequency.py`: quadrature/Hilbert and Generalized Zero-Crossing frequency estimators.
 - `hhsa/pipeline.py`: two-layer HHSA pipeline and `HHSAResult`.
 - `hhsa/statistics.py`: mode statistics, Hilbert-Huang spectrum, and holospectrum helpers.
-- `hhsa_tools/core.py`: class-based `HHSAAnalyzer`.
+- `hhsa_tools/core.py`: class-based `HHSAPipeline`.
 - `examples/verify_open_ecg.py`: runnable verification example.
 - `tests/`: focused tests for decomposition, frequency estimation, and HHSA outputs.

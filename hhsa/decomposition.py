@@ -16,8 +16,8 @@ from scipy.signal import argrelextrema
 
 
 @dataclass(frozen=True)
-class EMDConfig:
-    """Configuration values that control the compact EMD sifting loop."""
+class EMDSettings:
+    """Sifting settings that control the compact EMD loop."""
 
     max_imfs: int | None = None
     max_siftings: int = 50
@@ -110,18 +110,18 @@ def _is_imf(candidate: np.ndarray, *, envelope_mean_tol: float = 0.1) -> bool:
     return has_balanced_events and _has_small_envelope_mean(candidate, tolerance=envelope_mean_tol)
 
 
-def _sift_first_imf(signal: np.ndarray, config: EMDConfig) -> np.ndarray:
+def _sift_first_imf(signal: np.ndarray, settings: EMDSettings) -> np.ndarray:
     """Extract one IMF candidate from a signal by repeated envelope sifting."""
 
     h = signal.copy()
     eps = np.finfo(float).eps
-    for _ in range(config.max_siftings):
+    for _ in range(settings.max_siftings):
         if _is_terminal_residue(h):
             break
         previous = h.copy()
         h = h - _mean_envelope(h)
         sd = np.sum((previous - h) ** 2) / (np.sum(previous**2) + eps)
-        if sd < config.stop_sd and _is_imf(h, envelope_mean_tol=config.envelope_mean_tol):
+        if sd < settings.stop_sd and _is_imf(h, envelope_mean_tol=settings.envelope_mean_tol):
             break
     return h
 
@@ -137,7 +137,7 @@ def emd(
     """Decompose a signal into IMFs and a residue with vanilla EMD."""
 
     x = _as_1d(signal)
-    config = EMDConfig(
+    settings = EMDSettings(
         max_imfs=max_imfs,
         max_siftings=max_siftings,
         stop_sd=stop_sd,
@@ -147,9 +147,9 @@ def emd(
     imfs: list[np.ndarray] = []
 
     while not _is_terminal_residue(residue):
-        if config.max_imfs is not None and len(imfs) >= config.max_imfs:
+        if settings.max_imfs is not None and len(imfs) >= settings.max_imfs:
             break
-        imf = _sift_first_imf(residue, config)
+        imf = _sift_first_imf(residue, settings)
         if np.allclose(imf, 0):
             break
         imfs.append(imf)

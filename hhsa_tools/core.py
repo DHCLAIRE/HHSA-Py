@@ -1,7 +1,7 @@
-"""Class-based HHSA interface for homework and notebooks.
+"""Class-based HHSA pipeline interface for homework and notebooks.
 
-This module intentionally exposes one high-level tool: :class:`HHSAAnalyzer`.
-The analyzer stores repeated HHSA settings and delegates the numerical work to
+This module intentionally exposes one high-level tool: :class:`HHSAPipeline`.
+The pipeline stores repeated HHSA settings and delegates the numerical work to
 the lower-level functions in :mod:`hhsa`.
 """
 
@@ -15,8 +15,8 @@ from hhsa import HHSAResult, mode_energy, run_hhsa
 
 
 @dataclass
-class HHSAAnalyzer:
-    """Analyze one-dimensional non-stationary signals with HHSA.
+class HHSAPipeline:
+    """Run HHSA on one-dimensional non-stationary signals.
 
     Parameters
     ----------
@@ -52,7 +52,7 @@ class HHSAAnalyzer:
     random_state: int | None = 13
 
     def fit(self, signal: np.ndarray) -> HHSAResult:
-        """Run the configured two-layer HHSA pipeline.
+        """Run the two-layer HHSA pipeline with the stored settings.
 
         Parameters
         ----------
