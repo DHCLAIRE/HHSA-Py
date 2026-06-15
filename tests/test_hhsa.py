@@ -1,6 +1,6 @@
 import numpy as np
 
-from hhsa import generalized_zero_crossing, iceemdan, mode_energy, quadrature_frequency, run_hhsa
+from hhsa import generalized_zero_crossing, iceemdan, mode_energy, quadrature_frequency, run_hhsa, run_hhsa_dataset
 
 
 def test_frequency_estimators_track_sine():
@@ -41,6 +41,30 @@ def test_hhsa_pipeline_returns_modes_for_am_signal():
     assert result.hht.shape == (result.carrier_bins.size, x.size)
     assert result.holospectrum.shape == (result.carrier_bins.size, result.am_bins.size)
     assert np.all(mode_energy(result.imfs) > 0)
+
+
+def test_hhsa_dataset_runs_multichannel_array():
+    sample_rate = 100.0
+    t = np.arange(0, 1, 1 / sample_rate)
+    data = np.vstack(
+        [
+            np.sin(2 * np.pi * 10 * t),
+            np.sin(2 * np.pi * 14 * t),
+        ]
+    )
+
+    results = run_hhsa_dataset(
+        data,
+        sample_rate,
+        decomposition="emd",
+        frequency_method="quad",
+        max_imfs=2,
+        max_am_imfs=1,
+        emd_backend="local",
+    )
+
+    assert len(results) == 2
+    assert all(result.imfs.shape[1] == t.size for result in results)
 
 
 def test_iceemdan_function_reconstructs_signal():

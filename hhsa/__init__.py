@@ -2,7 +2,7 @@
 
 from .decomposition import ceemdan, emd, iceemdan
 from .frequency import frequency_transform, generalized_zero_crossing, quadrature_frequency
-from .pipeline import HHSAResult, run_hhsa
+from .pipeline import HHSAResult, as_channel_matrix, run_hhsa, run_hhsa_dataset
 from .statistics import (
     hilbert_huang_spectrum,
     holospectrum,
@@ -15,6 +15,7 @@ from .statistics import (
 
 __all__ = [
     "HHSAResult",
+    "as_channel_matrix",
     "ceemdan",
     "emd",
     "frequency_transform",
@@ -28,5 +29,6 @@ __all__ = [
     "orthogonality_index",
     "quadrature_frequency",
     "run_hhsa",
+    "run_hhsa_dataset",
     "spectrum_bin_edges",
 ]

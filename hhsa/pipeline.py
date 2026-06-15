@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 import numpy as np
+from scipy.io import wavfile
 
-from .decomposition import ceemdan, emd, iceemdan
+from .decomposition import EMDBackend, ceemdan, emd, iceemdan
 from .frequency import frequency_transform
 from .statistics import SpectrumBins, hilbert_huang_spectrum, holospectrum, spectrum_bin_edges
 
@@ -16,6 +18,9 @@ DecompositionMethod = Literal["emd", "ceemdan", "iceemdan"]
 
 # Supported instantaneous-frequency estimator names.
 FrequencyMethod = Literal["quad", "gzc", "hybrid"]
+
+# Supported array orientation hints for multi-channel arrays.
+ChannelAxis = Literal["auto", "first", "last"]
 
 
 @dataclass
@@ -64,11 +69,18 @@ def _decompose(
     random_state: int | None,
     max_siftings: int,
     stop_sd: float,
+    emd_backend: EMDBackend,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Dispatch to the requested decomposition function with shared settings."""
 
     if method == "emd":
-        return emd(signal, max_imfs=max_imfs, max_siftings=max_siftings, stop_sd=stop_sd)
+        return emd(
+            signal,
+            max_imfs=max_imfs,
+            max_siftings=max_siftings,
+            stop_sd=stop_sd,
+            backend=emd_backend,
+        )
     if method == "ceemdan":
         return ceemdan(
             signal,
@@ -78,6 +90,7 @@ def _decompose(
             random_state=random_state,
             max_siftings=max_siftings,
             stop_sd=stop_sd,
+            emd_backend=emd_backend,
         )
     if method == "iceemdan":
         return iceemdan(
@@ -88,8 +101,91 @@ def _decompose(
             random_state=random_state,
             max_siftings=max_siftings,
             stop_sd=stop_sd,
+            emd_backend=emd_backend,
         )
     raise ValueError("method must be 'emd', 'ceemdan', or 'iceemdan'")
+
+
+def _scale_audio_samples(data: np.ndarray) -> np.ndarray:
+    """Convert integer audio samples to floating point values near [-1, 1]."""
+
+    arr = np.asarray(data)
+    if np.issubdtype(arr.dtype, np.integer):
+        max_value = np.iinfo(arr.dtype).max
+        return arr.astype(float) / max_value
+    return arr.astype(float)
+
+
+def _read_wav(path: str | Path) -> tuple[np.ndarray, float, list[str]]:
+    """Read mono or multi-channel WAV audio as channels x samples."""
+
+    sample_rate, data = wavfile.read(path)
+    arr = _scale_audio_samples(data)
+    if arr.ndim == 1:
+        return arr[np.newaxis, :], float(sample_rate), ["audio_0"]
+    return arr.T, float(sample_rate), [f"audio_{idx}" for idx in range(arr.shape[1])]
+
+
+def _read_mne_data(data: object, picks: object | None) -> tuple[np.ndarray, float, list[str]]:
+    """Read Raw, Epochs, or Evoked-like MNE objects as channels x samples."""
+
+    info = getattr(data, "info", {})
+    sample_rate = float(info["sfreq"])
+    try:
+        values = data.get_data(picks=picks)
+    except TypeError:
+        values = data.get_data()
+    arr = np.asarray(values, dtype=float)
+    if arr.ndim == 3:
+        n_epochs, n_channels, n_times = arr.shape
+        arr = arr.transpose(1, 0, 2).reshape(n_channels, n_epochs * n_times)
+    if arr.ndim != 2:
+        raise ValueError("MNE data must resolve to shape (channels, samples)")
+    names = list(info.get("ch_names", [f"channel_{idx}" for idx in range(arr.shape[0])]))
+    if len(names) != arr.shape[0]:
+        names = [f"channel_{idx}" for idx in range(arr.shape[0])]
+    return arr, sample_rate, names
+
+
+def as_channel_matrix(
+    data: object,
+    *,
+    sample_rate: float | None = None,
+    channel_axis: ChannelAxis = "auto",
+    picks: object | None = None,
+) -> tuple[np.ndarray, float, list[str]]:
+    """Normalize EEG, MEG, audio, or array input to channels x samples.
+
+    Accepts 1-D arrays, 2-D arrays, WAV paths, and MNE Raw/Epochs/Evoked-like
+    objects. For 2-D arrays, ``channel_axis="auto"`` treats the smaller
+    dimension as channels.
+    """
+
+    if isinstance(data, (str, Path)):
+        path = Path(data)
+        if path.suffix.lower() != ".wav":
+            raise ValueError("only .wav audio paths are supported")
+        return _read_wav(path)
+
+    if hasattr(data, "get_data") and hasattr(data, "info"):
+        return _read_mne_data(data, picks)
+
+    if sample_rate is None:
+        raise ValueError("sample_rate is required for NumPy array input")
+    arr = np.asarray(data, dtype=float)
+    if arr.ndim == 1:
+        return arr[np.newaxis, :], float(sample_rate), ["signal_0"]
+    if arr.ndim != 2:
+        raise ValueError("array input must have shape (samples,), (channels, samples), or (samples, channels)")
+    if channel_axis == "first":
+        matrix = arr
+    elif channel_axis == "last":
+        matrix = arr.T
+    elif channel_axis == "auto":
+        matrix = arr if arr.shape[0] <= arr.shape[1] else arr.T
+    else:
+        raise ValueError("channel_axis must be 'auto', 'first', or 'last'")
+    return matrix, float(sample_rate), [f"channel_{idx}" for idx in range(matrix.shape[0])]
 
 
 def run_hhsa(
@@ -107,6 +203,7 @@ def run_hhsa(
     stop_sd: float = 0.2,
     carrier_hist: SpectrumBins | None = None,
     am_hist: SpectrumBins | None = None,
+    emd_backend: EMDBackend = "auto",
 ) -> HHSAResult:
     """Run HHSA using the Holo-Hilbert spectrum pipeline.
 
@@ -133,6 +230,7 @@ def run_hhsa(
         random_state=random_state,
         max_siftings=max_siftings,
         stop_sd=stop_sd,
+        emd_backend=emd_backend,
     )
     if imfs.size == 0:
         empty = np.empty((0, x.size))
@@ -176,6 +274,7 @@ def run_hhsa(
             random_state=seed,
             max_siftings=max_siftings,
             stop_sd=stop_sd,
+            emd_backend=emd_backend,
         )
         am_imfs.append(modes)
         am_residues.append(am_residue)
@@ -211,3 +310,49 @@ def run_hhsa(
         hht=hht,
         holospectrum=holo,
     )
+
+
+def run_hhsa_dataset(
+    data: object,
+    sample_rate: float | None = None,
+    *,
+    channel_axis: ChannelAxis = "auto",
+    picks: object | None = None,
+    decomposition: DecompositionMethod = "iceemdan",
+    frequency_method: FrequencyMethod = "hybrid",
+    max_imfs: int | None = 10,
+    max_am_imfs: int | None = 4,
+    ensemble_size: int = 64,
+    noise_width: float = 0.2,
+    random_state: int | None = 13,
+    max_siftings: int = 20,
+    stop_sd: float = 0.2,
+    carrier_hist: SpectrumBins | None = None,
+    am_hist: SpectrumBins | None = None,
+    emd_backend: EMDBackend = "auto",
+) -> list[HHSAResult]:
+    """Run HHSA independently for every channel in EEG, MEG, or audio data."""
+
+    matrix, inferred_rate, _ = as_channel_matrix(data, sample_rate=sample_rate, channel_axis=channel_axis, picks=picks)
+    results: list[HHSAResult] = []
+    for channel_index, channel in enumerate(matrix):
+        seed = None if random_state is None else random_state + channel_index
+        results.append(
+            run_hhsa(
+                channel,
+                inferred_rate,
+                decomposition=decomposition,
+                frequency_method=frequency_method,
+                max_imfs=max_imfs,
+                max_am_imfs=max_am_imfs,
+                ensemble_size=ensemble_size,
+                noise_width=noise_width,
+                random_state=seed,
+                max_siftings=max_siftings,
+                stop_sd=stop_sd,
+                carrier_hist=carrier_hist,
+                am_hist=am_hist,
+                emd_backend=emd_backend,
+            )
+        )
+    return results

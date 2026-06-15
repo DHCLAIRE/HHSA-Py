@@ -11,7 +11,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from hhsa import HHSAResult, mode_energy, run_hhsa
+from hhsa import HHSAResult, as_channel_matrix, mode_energy, run_hhsa, run_hhsa_dataset
+from hhsa.decomposition import EMDBackend
+from hhsa.pipeline import ChannelAxis
 
 
 @dataclass
@@ -21,7 +23,8 @@ class HHSAPipeline:
     Parameters
     ----------
     sample_rate:
-        Sampling rate of the input signal in Hz.
+        Sampling rate of array input in Hz. MNE objects and WAV paths can
+        provide this value automatically.
     decomposition:
         First- and second-layer decomposition method. Supported values are
         ``"iceemdan"``, ``"ceemdan"``, and ``"emd"``.
@@ -40,9 +43,12 @@ class HHSAPipeline:
         Relative noise scale for ensemble decompositions.
     random_state:
         Optional seed for reproducible ensemble noise.
+    emd_backend:
+        EMD implementation to use. ``"auto"`` tries EMD-Python, then PyEMD,
+        then the compact local fallback.
     """
 
-    sample_rate: float
+    sample_rate: float | None = None
     decomposition: str = "iceemdan"
     frequency_method: str = "hybrid"
     max_imfs: int | None = 10
@@ -50,26 +56,60 @@ class HHSAPipeline:
     ensemble_size: int = 64
     noise_width: float = 0.2
     random_state: int | None = 13
+    emd_backend: EMDBackend = "auto"
 
-    def fit(self, signal: np.ndarray) -> HHSAResult:
+    def fit(
+        self,
+        signal: object,
+        *,
+        channel_axis: ChannelAxis = "auto",
+        picks: object | None = None,
+    ) -> HHSAResult | list[HHSAResult]:
         """Run the two-layer HHSA pipeline with the stored settings.
 
         Parameters
         ----------
         signal:
-            One-dimensional time series to analyze.
+            One-dimensional signal, 2-D channel array, WAV path, or MNE
+            Raw/Epochs/Evoked-like object.
+        channel_axis:
+            Orientation hint for 2-D array input. Use ``"first"`` for
+            channels x samples, ``"last"`` for samples x channels, or
+            ``"auto"`` to infer the smaller dimension as channels.
+        picks:
+            Optional MNE channel picks passed to ``get_data``.
 
         Returns
         -------
-        HHSAResult
-            Full pipeline output, including first-layer IMFs, second-layer
-            amplitude-envelope IMFs, instantaneous frequency/amplitude arrays,
-            HHT, holospectrum, and reconstruction diagnostics.
+        HHSAResult or list[HHSAResult]
+            A single result for one-channel input, or one result per channel
+            for EEG, MEG, or multi-channel audio data.
         """
 
-        return run_hhsa(
+        matrix, sample_rate, _ = as_channel_matrix(
             signal,
-            self.sample_rate,
+            sample_rate=self.sample_rate,
+            channel_axis=channel_axis,
+            picks=picks,
+        )
+        if matrix.shape[0] > 1:
+            return run_hhsa_dataset(
+                signal,
+                sample_rate=self.sample_rate,
+                channel_axis=channel_axis,
+                picks=picks,
+                decomposition=self.decomposition,
+                frequency_method=self.frequency_method,
+                max_imfs=self.max_imfs,
+                max_am_imfs=self.max_am_imfs,
+                ensemble_size=self.ensemble_size,
+                noise_width=self.noise_width,
+                random_state=self.random_state,
+                emd_backend=self.emd_backend,
+            )
+        return run_hhsa(
+            matrix[0],
+            sample_rate,
             decomposition=self.decomposition,
             frequency_method=self.frequency_method,
             max_imfs=self.max_imfs,
@@ -77,15 +117,22 @@ class HHSAPipeline:
             ensemble_size=self.ensemble_size,
             noise_width=self.noise_width,
             random_state=self.random_state,
+            emd_backend=self.emd_backend,
         )
 
-    def summarize(self, result: HHSAResult, *, bins: int = 128) -> dict[str, np.ndarray | float]:
+    def summarize(
+        self,
+        result: HHSAResult | list[HHSAResult],
+        *,
+        bins: int = 128,
+    ) -> dict[str, np.ndarray | float] | list[dict[str, np.ndarray | float]]:
         """Collect common summary arrays from an HHSA result.
 
         Parameters
         ----------
         result:
-            Output returned by :meth:`fit` or by :func:`hhsa.run_hhsa`.
+            Output returned by :meth:`fit`, :func:`hhsa.run_hhsa`, or
+            :func:`hhsa.run_hhsa_dataset`.
         bins:
             Kept for backwards compatibility with older summaries. The current
             summary uses the frequency bins already stored on ``result``.
@@ -93,10 +140,12 @@ class HHSAPipeline:
         Returns
         -------
         dict
-            Dictionary with mode energy, carrier and AM frequency bins,
-            marginal spectrum, HHT, holospectrum, and reconstruction error.
+            Dictionary for one channel, or a list of dictionaries for
+            multi-channel data.
         """
 
+        if isinstance(result, list):
+            return [self.summarize(channel_result, bins=bins) for channel_result in result]
         energies = mode_energy(result.imfs)
         return {
             "mode_energy": energies,

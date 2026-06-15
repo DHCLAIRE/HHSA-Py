@@ -9,10 +9,14 @@ pipeline unchanged.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib import import_module
+from typing import Literal
 
 import numpy as np
 from scipy.interpolate import CubicSpline, interp1d
 from scipy.signal import argrelextrema
+
+EMDBackend = Literal["auto", "emd-python", "pyemd", "local"]
 
 
 @dataclass(frozen=True)
@@ -24,6 +28,12 @@ class EMDSettings:
     stop_sd: float = 0.2
     envelope_mean_tol: float = 0.1
     extrema_padding: int = 2
+
+
+def _max_imfs_for_external(max_imfs: int | None) -> int:
+    """Convert optional IMF limits to the convention used by EMD libraries."""
+
+    return -1 if max_imfs is None else int(max_imfs)
 
 
 def _as_1d(signal: np.ndarray) -> np.ndarray:
@@ -126,7 +136,7 @@ def _sift_first_imf(signal: np.ndarray, settings: EMDSettings) -> np.ndarray:
     return h
 
 
-def emd(
+def _emd_local(
     signal: np.ndarray,
     *,
     max_imfs: int | None = None,
@@ -134,7 +144,7 @@ def emd(
     stop_sd: float = 0.2,
     envelope_mean_tol: float = 0.1,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Decompose a signal into IMFs and a residue with vanilla EMD."""
+    """Run the compact local EMD implementation used as a final fallback."""
 
     x = _as_1d(signal)
     settings = EMDSettings(
@@ -160,6 +170,110 @@ def emd(
     return np.vstack(imfs), residue
 
 
+def _emd_with_emd_python(
+    signal: np.ndarray,
+    *,
+    max_imfs: int | None,
+    max_siftings: int,
+    stop_sd: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Run EMD-Python's sift implementation and convert output orientation."""
+
+    x = _as_1d(signal)
+    sift = import_module("emd.sift")
+    imf_opts = {"sd_thresh": stop_sd, "max_iters": max_siftings}
+    try:
+        modes = sift.sift(x, max_imfs=max_imfs, imf_opts=imf_opts)
+    except TypeError:
+        modes = sift.sift(x, max_imfs=max_imfs)
+    modes = np.asarray(modes, dtype=float)
+    if modes.ndim == 1:
+        modes = modes[:, np.newaxis]
+    if modes.shape[0] == x.size:
+        modes = modes.T
+    if max_imfs is not None:
+        modes = modes[:max_imfs]
+    residue = x - modes.sum(axis=0) if modes.size else x.copy()
+    return modes, residue
+
+
+def _emd_with_pyemd(
+    signal: np.ndarray,
+    *,
+    max_imfs: int | None,
+    max_siftings: int,
+    stop_sd: float,
+    envelope_mean_tol: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Run PyEMD's EMD implementation and return package-native orientation."""
+
+    x = _as_1d(signal)
+    pyemd = import_module("PyEMD")
+    decomposer = pyemd.EMD()
+    decomposer.MAX_ITERATION = max_siftings
+    decomposer.FIXE_H = max_siftings
+    decomposer.std_thr = stop_sd
+    decomposer.range_thr = envelope_mean_tol
+    modes = np.asarray(decomposer.emd(x, max_imf=_max_imfs_for_external(max_imfs)), dtype=float)
+    if modes.ndim == 1:
+        modes = modes[np.newaxis, :]
+    if max_imfs is not None:
+        modes = modes[:max_imfs]
+    residue = x - modes.sum(axis=0) if modes.size else x.copy()
+    return modes, residue
+
+
+def emd(
+    signal: np.ndarray,
+    *,
+    max_imfs: int | None = None,
+    max_siftings: int = 50,
+    stop_sd: float = 0.2,
+    envelope_mean_tol: float = 0.1,
+    backend: EMDBackend = "auto",
+) -> tuple[np.ndarray, np.ndarray]:
+    """Decompose a signal into IMFs and a residue.
+
+    ``backend="auto"`` tries EMD-Python first, then PyEMD, then the compact
+    local implementation.
+    """
+
+    backends = ["emd-python", "pyemd", "local"] if backend == "auto" else [backend]
+    last_error: Exception | None = None
+    for selected in backends:
+        try:
+            if selected == "emd-python":
+                return _emd_with_emd_python(
+                    signal,
+                    max_imfs=max_imfs,
+                    max_siftings=max_siftings,
+                    stop_sd=stop_sd,
+                )
+            if selected == "pyemd":
+                return _emd_with_pyemd(
+                    signal,
+                    max_imfs=max_imfs,
+                    max_siftings=max_siftings,
+                    stop_sd=stop_sd,
+                    envelope_mean_tol=envelope_mean_tol,
+                )
+            if selected == "local":
+                return _emd_local(
+                    signal,
+                    max_imfs=max_imfs,
+                    max_siftings=max_siftings,
+                    stop_sd=stop_sd,
+                    envelope_mean_tol=envelope_mean_tol,
+                )
+        except (ImportError, ModuleNotFoundError, AttributeError, TypeError, ValueError) as exc:
+            last_error = exc
+            if backend != "auto":
+                raise
+    if last_error is not None:
+        raise last_error
+    raise ValueError("backend must be 'auto', 'emd-python', 'pyemd', or 'local'")
+
+
 def _normalize_noise(noise: np.ndarray) -> np.ndarray:
     """Scale a noise vector to unit standard deviation when possible."""
 
@@ -179,6 +293,7 @@ def ceemdan(
     max_siftings: int = 50,
     stop_sd: float = 0.2,
     envelope_mean_tol: float = 0.1,
+    emd_backend: EMDBackend = "auto",
 ) -> tuple[np.ndarray, np.ndarray]:
     """Complete ensemble EMD with adaptive noise.
 
@@ -205,6 +320,7 @@ def ceemdan(
                 max_siftings=max_siftings,
                 stop_sd=stop_sd,
                 envelope_mean_tol=envelope_mean_tol,
+                backend=emd_backend,
             )
             if first.size:
                 members.append(first[0])
@@ -230,6 +346,7 @@ def iceemdan(
     stop_sd: float = 0.2,
     envelope_mean_tol: float = 0.1,
     snr_flag: int = 1,
+    emd_backend: EMDBackend = "auto",
 ) -> tuple[np.ndarray, np.ndarray]:
     """Improved CEEMDAN-style decomposition.
 
@@ -257,6 +374,7 @@ def iceemdan(
             max_siftings=max_siftings,
             stop_sd=stop_sd,
             envelope_mean_tol=envelope_mean_tol,
+            backend=emd_backend,
         )
         noise_modes.append(np.vstack((modes, residue[np.newaxis, :])))
 
@@ -270,6 +388,7 @@ def iceemdan(
             max_siftings=max_siftings,
             stop_sd=stop_sd,
             envelope_mean_tol=envelope_mean_tol,
+            backend=emd_backend,
         )
         first_means.append(noisy_residue if first.size else noisy_signal)
 
@@ -297,6 +416,7 @@ def iceemdan(
                 max_siftings=max_siftings,
                 stop_sd=stop_sd,
                 envelope_mean_tol=envelope_mean_tol,
+                backend=emd_backend,
             )
             next_means.append(noisy_residue)
 

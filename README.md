@@ -4,6 +4,11 @@ Python Authors: Ting & Codex
 
 This repository implements a compact, inspectable Holo-Hilbert Spectral Analysis pipeline for one-dimensional neural and biomedical time series. The code is designed to be easy to compare with MATLAB while still exposing a clean Python package interface.
 
+The pipeline accepts one-dimensional signals, multi-channel arrays, WAV audio,
+and MNE-Python Raw/Epochs/Evoked-style EEG/MEG objects. Decomposition uses
+external EMD libraries when available: EMD-Python first, PyEMD second, and the
+local implementation only as a fallback.
+
 The pipeline follows the holospectrum workflow:
 
 1. Decompose the signal into IMFs with EMD, CEEMDAN, or ICEEMDAN.
@@ -20,16 +25,19 @@ From the repository root, install the package with pip:
 python3 -m pip install .
 ```
 
+This installs the core scientific stack plus EMD-Python (`emd`), PyEMD
+(`EMD-signal`, imported as `PyEMD`), and MNE-Python (`mne`).
+
 Install in editable mode when you are developing the code:
 
 ```bash
 python3 -m pip install -e ".[dev,plot]"
 ```
 
-For the full neuro-data workflow, install the optional neuro dependencies too:
+For notebook use, install the notebook extra too:
 
 ```bash
-python3 -m pip install -e ".[dev,plot,neuro]"
+python3 -m pip install -e ".[dev,plot,notebook]"
 ```
 
 Install directly from GitHub after the repository is pushed:
@@ -235,10 +243,53 @@ plt.title("Holo-Hilbert Spectrum")
 plt.show()
 ```
 
+### Tutorial 5: Run EEG or MEG Data From MNE-Python
+
+Use this path for MNE `Raw`, `Epochs`, or `Evoked` objects. Sampling rate is
+read from `raw.info["sfreq"]`, and data are analyzed one channel at a time.
+
+```python
+from hhsa_tools import HHSAPipeline
+
+pipeline = HHSAPipeline(
+    decomposition="iceemdan",
+    frequency_method="hybrid",
+    max_imfs=10,
+    max_am_imfs=4,
+    ensemble_size=32,
+)
+
+results = pipeline.fit(raw, picks="eeg")  # or picks="meg"
+summaries = pipeline.summarize(results)
+print(len(results))
+```
+
+### Tutorial 6: Run Multi-Channel Audio
+
+WAV paths are read directly. Stereo or multi-channel audio returns one
+`HHSAResult` per channel.
+
+```python
+from hhsa_tools import HHSAPipeline
+
+pipeline = HHSAPipeline(decomposition="iceemdan", max_imfs=10)
+results = pipeline.fit("example_audio.wav")
+
+for channel_index, result in enumerate(results):
+    print(channel_index, result.holospectrum.shape)
+```
+
+For NumPy audio arrays shaped as samples x channels, set `channel_axis="last"`:
+
+```python
+pipeline = HHSAPipeline(sample_rate=44100, decomposition="iceemdan", max_imfs=10)
+results = pipeline.fit(stereo_array, channel_axis="last")
+```
+
 ## HHSA Workflow
 
 1. Prepare a one-dimensional signal.
-   Remove NaNs, detrend if needed, and keep the sampling rate in Hz.
+   For arrays, remove NaNs, detrend if needed, and keep the sampling rate in Hz. For MNE objects and WAV paths, HHSA can infer the sampling rate.
 
 2. Choose the first-layer decomposition.
    Use `decomposition="iceemdan"` for the main HHSA direction, `decomposition="ceemdan"` as a CEEMDAN baseline, and `decomposition="emd"` for fast debugging.
@@ -318,19 +369,22 @@ Recommended first MEG verification:
 - `HHSAPipeline.ensemble_size`: number of noise realizations for CEEMDAN/ICEEMDAN.
 - `HHSAPipeline.noise_width`: relative noise scale for ensemble decomposition.
 - `HHSAPipeline.random_state`: seed used for reproducible ensemble noise.
-- `HHSAPipeline.fit(signal)`: runs `run_hhsa` with the pipeline's stored decomposition, frequency, and ensemble parameters. It returns the full `HHSAResult`.
-- `HHSAPipeline.summarize(result)`: returns common summary outputs from an `HHSAResult`, including mode energy, frequency bins, marginal spectrum, HHT, holospectrum, and reconstruction error. The optional `bins` argument is retained for compatibility; current summaries use the bins stored on `result`.
+- `HHSAPipeline.emd_backend`: EMD backend selector. Use `"auto"`, `"emd-python"`, `"pyemd"`, or `"local"`.
+- `HHSAPipeline.fit(signal)`: runs HHSA with the pipeline's stored decomposition, frequency, and ensemble parameters. It accepts 1-D arrays, multi-channel arrays, WAV paths, and MNE Raw/Epochs/Evoked-like objects.
+- `HHSAPipeline.summarize(result)`: returns common summary outputs from an `HHSAResult`, including mode energy, frequency bins, marginal spectrum, HHT, holospectrum, and reconstruction error. For multi-channel input, it returns one summary per channel.
 
 ### `hhsa.pipeline`
 
 - `run_hhsa(signal, sample_rate, ...)`: main two-layer HHSA workflow. It decomposes the signal, computes instantaneous carrier statistics, decomposes amplitude envelopes, and builds HHT plus holospectrum arrays. The default first-layer limit is `max_imfs=10`.
+- `run_hhsa_dataset(data, sample_rate=None, ...)`: runs HHSA independently for every channel in a 2-D array, WAV path, or MNE object.
+- `as_channel_matrix(data, ...)`: converts EEG, MEG, audio, or array input to channels x samples for consistent processing.
 - `HHSAResult`: dataclass returned by `run_hhsa`. It stores first-layer IMFs, second-layer AM IMFs, instantaneous statistics, spectral bins, marginal spectrum, HHT, and holospectrum.
 - `HHSAResult.reconstruction`: property that reconstructs the original signal from first-layer IMFs plus residue.
 - `HHSAResult.reconstruction_error`: property that reports relative reconstruction error.
 
 ### `hhsa.decomposition`
 
-- `emd(signal, ...)`: compact vanilla Empirical Mode Decomposition. Returns `(imfs, residue)`.
+- `emd(signal, ...)`: Empirical Mode Decomposition wrapper. With `backend="auto"`, it tries EMD-Python, then PyEMD, then the local fallback. Returns `(imfs, residue)`.
 - `ceemdan(signal, ...)`: compact Complete Ensemble EMD with Adaptive Noise. Returns `(imfs, residue)` and is useful as a baseline.
 - `iceemdan(signal, ...)`: Improved CEEMDAN-style decomposition following the MATLAB ICEEMDAN structure. Returns `(imfs, residue)` for direct use in HHSA.
 
