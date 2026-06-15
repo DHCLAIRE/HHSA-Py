@@ -14,7 +14,13 @@ The pipeline follows the holospectrum workflow:
 
 ## Install
 
-Install in editable mode from the repository root:
+From the repository root, install the package with pip:
+
+```bash
+python3 -m pip install .
+```
+
+Install in editable mode when you are developing the code:
 
 ```bash
 python3 -m pip install -e ".[dev,plot]"
@@ -24,6 +30,18 @@ For the full neuro-data workflow, install the optional neuro dependencies too:
 
 ```bash
 python3 -m pip install -e ".[dev,plot,neuro]"
+```
+
+Install directly from GitHub after the repository is pushed:
+
+```bash
+python3 -m pip install "git+https://github.com/DHCLAIRE/HHSA-Py.git"
+```
+
+If the package is later published to PyPI under the `hhsa_tools` package name, install it with:
+
+```bash
+python3 -m pip install hhsa_tools
 ```
 
 Run the test suite:
@@ -108,6 +126,113 @@ ICEEMDAN is available through the functional decomposition API.
 from hhsa import iceemdan
 
 imfs, residue = iceemdan(signal, ensemble_size=100, noise_width=0.2, random_state=13)
+```
+
+## Tutorials
+
+### Tutorial 1: Run HHSA With `HHSAPipeline`
+
+Use this path when you want one reusable object for repeated analyses.
+
+```python
+import numpy as np
+from hhsa_tools import HHSAPipeline
+
+sample_rate = 200.0
+t = np.arange(0, 3, 1 / sample_rate)
+signal = (1 + 0.3 * np.sin(2 * np.pi * 2 * t)) * np.sin(2 * np.pi * 20 * t)
+
+pipeline = HHSAPipeline(
+    sample_rate=sample_rate,
+    decomposition="iceemdan",
+    frequency_method="hybrid",
+    max_imfs=10,
+    max_am_imfs=4,
+    ensemble_size=32,
+    noise_width=0.1,
+    random_state=13,
+)
+
+result = pipeline.fit(signal)
+summary = pipeline.summarize(result)
+
+print("Carrier IMFs:", result.imfs.shape)
+print("Second-layer IMF groups:", len(result.am_imfs))
+print("Reconstruction error:", summary["reconstruction_error"])
+```
+
+### Tutorial 2: Run the Functional HHSA API
+
+Use this path when you want to set every option directly in one call.
+
+```python
+from hhsa import run_hhsa
+
+result = run_hhsa(
+    signal,
+    sample_rate,
+    decomposition="iceemdan",
+    frequency_method="hybrid",
+    max_imfs=10,
+    max_am_imfs=4,
+    ensemble_size=32,
+    noise_width=0.1,
+    carrier_hist=(1, 100, 128, "log"),
+    am_hist=(0.01, 32, 64, "log"),
+    random_state=13,
+)
+
+print(result.carrier_bins.shape)
+print(result.am_bins.shape)
+print(result.hht.shape)
+print(result.holospectrum.shape)
+```
+
+### Tutorial 3: Use ICEEMDAN Alone
+
+Use this path when you only need decomposition and not the full Holo-Hilbert spectrum.
+
+```python
+from hhsa import iceemdan
+
+imfs, residue = iceemdan(
+    signal,
+    max_imfs=10,
+    ensemble_size=100,
+    noise_width=0.2,
+    random_state=13,
+)
+
+reconstruction = imfs.sum(axis=0) + residue
+```
+
+### Tutorial 4: Plot HHT and Holospectrum
+
+Install plot extras first:
+
+```bash
+python3 -m pip install -e ".[plot]"
+```
+
+Then plot the two main spectrum outputs:
+
+```python
+import matplotlib.pyplot as plt
+
+plt.figure()
+plt.pcolormesh(result.carrier_bins, np.arange(result.hht.shape[1]), result.hht.T, shading="auto")
+plt.xlabel("Carrier frequency (Hz)")
+plt.ylabel("Sample")
+plt.title("Hilbert-Huang Transform")
+
+plt.figure()
+plt.pcolormesh(result.am_bins, result.carrier_bins, result.holospectrum, shading="auto")
+plt.xscale("log")
+plt.yscale("log")
+plt.xlabel("AM frequency (Hz)")
+plt.ylabel("Carrier frequency (Hz)")
+plt.title("Holo-Hilbert Spectrum")
+plt.show()
 ```
 
 ## HHSA Workflow
