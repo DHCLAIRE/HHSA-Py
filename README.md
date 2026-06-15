@@ -304,7 +304,7 @@ Recommended first MEG verification:
 └── tests/
 ```
 
-`hhsa` contains the research functions. `hhsa_tools` exposes the class-based interface for notebooks and coursework.
+`hhsa` contains the core implementation; `hhsa_tools` contains the notebook-friendly pipeline wrapper.
 
 ## Function Reference
 
@@ -350,13 +350,3 @@ Recommended first MEG verification:
 - `spectrum_bin_edges(hist)`: converts an EMD-style histogram tuple such as `(1, 100, 128, "log")` into bin centers and edges.
 - `hilbert_huang_spectrum(frequency, amplitude, hist)`: builds the 1D marginal spectrum and 2D HHT over carrier frequency x time.
 - `holospectrum(carrier_frequency, am_frequency, am_amplitude, carrier_hist, am_hist)`: builds the time-averaged Holo-Hilbert spectrum over carrier frequency x AM frequency.
-
-## Code Map
-
-- `hhsa/decomposition.py`: EMD, CEEMDAN, and ICEEMDAN decomposition functions.
-- `hhsa/frequency.py`: quadrature/Hilbert and Generalized Zero-Crossing frequency estimators.
-- `hhsa/pipeline.py`: two-layer HHSA pipeline and `HHSAResult`.
-- `hhsa/statistics.py`: mode statistics, Hilbert-Huang spectrum, and holospectrum helpers.
-- `hhsa_tools/core.py`: class-based `HHSAPipeline`.
-- `examples/verify_open_ecg.py`: runnable verification example.
-- `tests/`: focused tests for decomposition, frequency estimation, and HHSA outputs.
