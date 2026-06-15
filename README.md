@@ -287,7 +287,6 @@ Recommended first MEG verification:
 ```text
 .
 ├── README.md
-├── LICENSE
 ├── LICENSE.txt
 ├── requirements.txt
 ├── pyproject.toml
