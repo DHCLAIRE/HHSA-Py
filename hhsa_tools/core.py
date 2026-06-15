@@ -30,7 +30,7 @@ class HHSAPipeline:
         ``"gzc"`` for Generalized Zero-Crossing, or ``"hybrid"`` to combine
         both.
     max_imfs:
-        Maximum number of first-layer carrier IMFs to extract.
+        Maximum number of first-layer carrier IMFs to extract. Defaults to 10.
     max_am_imfs:
         Maximum number of second-layer amplitude-modulation IMFs to extract
         from each carrier amplitude envelope.
@@ -45,7 +45,7 @@ class HHSAPipeline:
     sample_rate: float
     decomposition: str = "iceemdan"
     frequency_method: str = "hybrid"
-    max_imfs: int | None = 6
+    max_imfs: int | None = 10
     max_am_imfs: int | None = 4
     ensemble_size: int = 64
     noise_width: float = 0.2

@@ -48,7 +48,7 @@ pipeline = HHSAPipeline(
     sample_rate=sample_rate,
     decomposition="iceemdan",
     frequency_method="hybrid",
-    max_imfs=4,
+    max_imfs=10,
     max_am_imfs=3,
     ensemble_size=16,
     noise_width=0.1,
@@ -73,7 +73,7 @@ result = run_hhsa(
     sample_rate,
     decomposition="iceemdan",
     frequency_method="hybrid",
-    max_imfs=4,
+    max_imfs=10,
     max_am_imfs=3,
     carrier_hist=(1, 100, 128, "log"),
     am_hist=(0.01, 32, 64, "log"),
@@ -189,7 +189,7 @@ Recommended first MEG verification:
 - `HHSAPipeline.sample_rate`: sampling rate in Hz, used by all frequency estimates.
 - `HHSAPipeline.decomposition`: decomposition method for both HHSA layers. Use `"iceemdan"`, `"ceemdan"`, or `"emd"`.
 - `HHSAPipeline.frequency_method`: instantaneous-frequency method. Use `"quad"`, `"gzc"`, or `"hybrid"`.
-- `HHSAPipeline.max_imfs`: maximum number of first-layer carrier IMFs.
+- `HHSAPipeline.max_imfs`: maximum number of first-layer carrier IMFs. The default is `10`.
 - `HHSAPipeline.max_am_imfs`: maximum number of second-layer amplitude-modulation IMFs per carrier.
 - `HHSAPipeline.ensemble_size`: number of noise realizations for CEEMDAN/ICEEMDAN.
 - `HHSAPipeline.noise_width`: relative noise scale for ensemble decomposition.
@@ -199,7 +199,7 @@ Recommended first MEG verification:
 
 ### `hhsa.pipeline`
 
-- `run_hhsa(signal, sample_rate, ...)`: main two-layer HHSA workflow. It decomposes the signal, computes instantaneous carrier statistics, decomposes amplitude envelopes, and builds HHT plus holospectrum arrays.
+- `run_hhsa(signal, sample_rate, ...)`: main two-layer HHSA workflow. It decomposes the signal, computes instantaneous carrier statistics, decomposes amplitude envelopes, and builds HHT plus holospectrum arrays. The default first-layer limit is `max_imfs=10`.
 - `HHSAResult`: dataclass returned by `run_hhsa`. It stores first-layer IMFs, second-layer AM IMFs, instantaneous statistics, spectral bins, marginal spectrum, HHT, and holospectrum.
 - `HHSAResult.reconstruction`: property that reconstructs the original signal from first-layer IMFs plus residue.
 - `HHSAResult.reconstruction_error`: property that reports relative reconstruction error.

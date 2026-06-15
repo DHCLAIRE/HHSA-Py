@@ -98,7 +98,7 @@ def run_hhsa(
     *,
     decomposition: DecompositionMethod = "iceemdan",
     frequency_method: FrequencyMethod = "hybrid",
-    max_imfs: int | None = 6,
+    max_imfs: int | None = 10,
     max_am_imfs: int | None = 4,
     ensemble_size: int = 64,
     noise_width: float = 0.2,
