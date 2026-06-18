@@ -1,6 +1,6 @@
 import numpy as np
 
-from hhsa import generalized_zero_crossing, iceemdan, mode_energy, quadrature_frequency, run_hhsa, run_hhsa_dataset
+from hhsa import ceemdan, generalized_zero_crossing, iceemdan, mode_energy, quadrature_frequency, run_hhsa, run_hhsa_dataset
 
 
 def test_frequency_estimators_track_sine():
@@ -60,7 +60,7 @@ def test_hhsa_dataset_runs_multichannel_array():
         frequency_method="quad",
         max_imfs=2,
         max_am_imfs=1,
-        emd_backend="local",
+        emd_backend="emd-python",
     )
 
     assert len(results) == 2
@@ -80,6 +80,17 @@ def test_iceemdan_function_reconstructs_signal():
         random_state=7,
         max_siftings=8,
     )
+
+    assert imfs.shape[1] == x.size
+    np.testing.assert_allclose(imfs.sum(axis=0) + residue, x, atol=1e-10)
+
+
+def test_ceemdan_uses_external_pyemd_shape():
+    sample_rate = 100.0
+    t = np.arange(0, 1, 1 / sample_rate)
+    x = np.sin(2 * np.pi * 8 * t)
+
+    imfs, residue = ceemdan(x, max_imfs=2, ensemble_size=4, random_state=2)
 
     assert imfs.shape[1] == x.size
     np.testing.assert_allclose(imfs.sum(axis=0) + residue, x, atol=1e-10)

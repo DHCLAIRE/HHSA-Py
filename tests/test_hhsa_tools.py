@@ -35,7 +35,7 @@ def test_hhsa_pipeline_fit_accepts_audio_style_array():
         frequency_method="quad",
         max_imfs=2,
         max_am_imfs=1,
-        emd_backend="local",
+        emd_backend="emd-python",
     )
     results = pipeline.fit(stereo, channel_axis="last")
     summaries = pipeline.summarize(results)

@@ -1,33 +1,18 @@
 """EMD, CEEMDAN, and ICEEMDAN-style decomposition.
 
-The implementations here are intentionally compact and dependency-light so the
-pipeline is easy to study. If PyEMD or emd is available in your environment, you
-can swap this module for those battle-tested decomposers while keeping the HHSA
-pipeline unchanged.
+EMD and CEEMDAN are delegated to external libraries: EMD-Python (``emd``)
+and PyEMD (``PyEMD``).
+ICEEMDAN remains project code, but its internal EMD calls use those libraries.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from importlib import import_module
 from typing import Literal
 
 import numpy as np
-from scipy.interpolate import CubicSpline, interp1d
-from scipy.signal import argrelextrema
 
-EMDBackend = Literal["auto", "emd-python", "pyemd", "local"]
-
-
-@dataclass(frozen=True)
-class EMDSettings:
-    """Sifting settings that control the compact EMD loop."""
-
-    max_imfs: int | None = None
-    max_siftings: int = 50
-    stop_sd: float = 0.2
-    envelope_mean_tol: float = 0.1
-    extrema_padding: int = 2
+EMDBackend = Literal["auto", "emd-python", "pyemd"]
 
 
 def _max_imfs_for_external(max_imfs: int | None) -> int:
@@ -45,129 +30,6 @@ def _as_1d(signal: np.ndarray) -> np.ndarray:
     if x.size < 4:
         raise ValueError("signal must contain at least four samples")
     return x
-
-
-def _extrema_indices(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Return sample indices of local maxima and local minima."""
-
-    maxima = argrelextrema(x, np.greater)[0]
-    minima = argrelextrema(x, np.less)[0]
-    return maxima, minima
-
-
-def _is_terminal_residue(x: np.ndarray) -> bool:
-    """Return True when a residue cannot produce another oscillatory IMF."""
-
-    maxima, minima = _extrema_indices(x)
-    return maxima.size + minima.size < 2
-
-
-def _pad_extrema(indices: np.ndarray, n: int) -> np.ndarray:
-    """Add signal endpoints to extrema indices for envelope interpolation."""
-
-    if indices.size == 0:
-        return np.array([0, n - 1])
-    padded = np.unique(np.concatenate(([0], indices, [n - 1]))).astype(int)
-    return padded
-
-
-def _envelope(x: np.ndarray, indices: np.ndarray) -> np.ndarray:
-    """Interpolate an upper or lower envelope through extrema locations."""
-
-    n = x.size
-    t = np.arange(n)
-    knots = _pad_extrema(indices, n)
-    values = x[knots]
-    if knots.size >= 4:
-        return CubicSpline(knots, values, bc_type="natural")(t)
-    return interp1d(knots, values, kind="linear", fill_value="extrapolate")(t)
-
-
-def _mean_envelope(x: np.ndarray) -> np.ndarray:
-    """Return the pointwise mean of upper and lower EMD envelopes."""
-
-    maxima, minima = _extrema_indices(x)
-    upper = _envelope(x, maxima)
-    lower = _envelope(x, minima)
-    return 0.5 * (upper + lower)
-
-
-def _zero_crossing_count(x: np.ndarray) -> int:
-    """Count sign changes through zero, ignoring zero-only touches."""
-
-    signs = np.sign(x)
-    nonzero = signs[signs != 0]
-    if nonzero.size < 2:
-        return 0
-    return int(np.count_nonzero(nonzero[1:] != nonzero[:-1]))
-
-
-def _has_small_envelope_mean(candidate: np.ndarray, *, tolerance: float) -> bool:
-    """Check whether an IMF candidate has a small normalized envelope mean."""
-
-    mean = _mean_envelope(candidate)
-    scale = np.linalg.norm(candidate) + np.finfo(float).eps
-    return bool(np.linalg.norm(mean) / scale <= tolerance)
-
-
-def _is_imf(candidate: np.ndarray, *, envelope_mean_tol: float = 0.1) -> bool:
-    """Check both IMF conditions used by the EMD sifting stop rule."""
-
-    maxima, minima = _extrema_indices(candidate)
-    extrema_count = maxima.size + minima.size
-    zero_crossings = _zero_crossing_count(candidate)
-    has_balanced_events = abs(extrema_count - zero_crossings) <= 1
-    return has_balanced_events and _has_small_envelope_mean(candidate, tolerance=envelope_mean_tol)
-
-
-def _sift_first_imf(signal: np.ndarray, settings: EMDSettings) -> np.ndarray:
-    """Extract one IMF candidate from a signal by repeated envelope sifting."""
-
-    h = signal.copy()
-    eps = np.finfo(float).eps
-    for _ in range(settings.max_siftings):
-        if _is_terminal_residue(h):
-            break
-        previous = h.copy()
-        h = h - _mean_envelope(h)
-        sd = np.sum((previous - h) ** 2) / (np.sum(previous**2) + eps)
-        if sd < settings.stop_sd and _is_imf(h, envelope_mean_tol=settings.envelope_mean_tol):
-            break
-    return h
-
-
-def _emd_local(
-    signal: np.ndarray,
-    *,
-    max_imfs: int | None = None,
-    max_siftings: int = 50,
-    stop_sd: float = 0.2,
-    envelope_mean_tol: float = 0.1,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Run the compact local EMD implementation used as a final fallback."""
-
-    x = _as_1d(signal)
-    settings = EMDSettings(
-        max_imfs=max_imfs,
-        max_siftings=max_siftings,
-        stop_sd=stop_sd,
-        envelope_mean_tol=envelope_mean_tol,
-    )
-    residue = x.copy()
-    imfs: list[np.ndarray] = []
-
-    while not _is_terminal_residue(residue):
-        if settings.max_imfs is not None and len(imfs) >= settings.max_imfs:
-            break
-        imf = _sift_first_imf(residue, settings)
-        if np.allclose(imf, 0):
-            break
-        imfs.append(imf)
-        residue = residue - imf
-
-    if not imfs:
-        return np.empty((0, x.size)), residue
-    return np.vstack(imfs), residue
 
 
 def _emd_with_emd_python(
@@ -234,11 +96,10 @@ def emd(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Decompose a signal into IMFs and a residue.
 
-    ``backend="auto"`` tries EMD-Python first, then PyEMD, then the compact
-    local implementation.
+    ``backend="auto"`` tries EMD-Python first, then PyEMD.
     """
 
-    backends = ["emd-python", "pyemd", "local"] if backend == "auto" else [backend]
+    backends = ["emd-python", "pyemd"] if backend == "auto" else [backend]
     last_error: Exception | None = None
     for selected in backends:
         try:
@@ -257,21 +118,13 @@ def emd(
                     stop_sd=stop_sd,
                     envelope_mean_tol=envelope_mean_tol,
                 )
-            if selected == "local":
-                return _emd_local(
-                    signal,
-                    max_imfs=max_imfs,
-                    max_siftings=max_siftings,
-                    stop_sd=stop_sd,
-                    envelope_mean_tol=envelope_mean_tol,
-                )
         except (ImportError, ModuleNotFoundError, AttributeError, TypeError, ValueError) as exc:
             last_error = exc
             if backend != "auto":
                 raise
     if last_error is not None:
         raise last_error
-    raise ValueError("backend must be 'auto', 'emd-python', 'pyemd', or 'local'")
+    raise ValueError("backend must be 'auto', 'emd-python', or 'pyemd'")
 
 
 def _normalize_noise(noise: np.ndarray) -> np.ndarray:
@@ -281,6 +134,29 @@ def _normalize_noise(noise: np.ndarray) -> np.ndarray:
     if std == 0:
         return noise
     return noise / std
+
+
+def _can_extract_external_imf(
+    signal: np.ndarray,
+    *,
+    max_siftings: int,
+    stop_sd: float,
+    envelope_mean_tol: float,
+    emd_backend: EMDBackend,
+) -> bool:
+    """Use the selected EMD library to decide whether another IMF exists."""
+
+    if np.allclose(signal, 0):
+        return False
+    modes, _ = emd(
+        signal,
+        max_imfs=1,
+        max_siftings=max_siftings,
+        stop_sd=stop_sd,
+        envelope_mean_tol=envelope_mean_tol,
+        backend=emd_backend,
+    )
+    return bool(modes.size and not np.allclose(modes[0], 0))
 
 
 def ceemdan(
@@ -295,44 +171,32 @@ def ceemdan(
     envelope_mean_tol: float = 0.1,
     emd_backend: EMDBackend = "auto",
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Complete ensemble EMD with adaptive noise.
-
-    This educational implementation estimates each next IMF by averaging the
-    first IMF extracted from noisy copies of the current residue.
-    """
+    """Decompose a signal with PyEMD's CEEMDAN implementation."""
 
     x = _as_1d(signal)
-    rng = np.random.default_rng(random_state)
-    residue = x.copy()
-    imfs: list[np.ndarray] = []
-    scale = noise_width * np.std(x)
-
-    while not _is_terminal_residue(residue):
-        if max_imfs is not None and len(imfs) >= max_imfs:
-            break
-        members = []
-        for _ in range(ensemble_size):
-            noise = _normalize_noise(rng.normal(size=x.size))
-            noisy = residue + scale * noise
-            first, _ = emd(
-                noisy,
-                max_imfs=1,
-                max_siftings=max_siftings,
-                stop_sd=stop_sd,
-                envelope_mean_tol=envelope_mean_tol,
-                backend=emd_backend,
-            )
-            if first.size:
-                members.append(first[0])
-        if not members:
-            break
-        imf = np.mean(members, axis=0)
-        imfs.append(imf)
-        residue = residue - imf
-
-    if not imfs:
-        return np.empty((0, x.size)), residue
-    return np.vstack(imfs), residue
+    pyemd = import_module("PyEMD")
+    ext_emd = pyemd.EMD()
+    ext_emd.MAX_ITERATION = max_siftings
+    ext_emd.std_thr = stop_sd
+    ext_emd.range_thr = envelope_mean_tol
+    decomposer = pyemd.CEEMDAN(
+        trials=ensemble_size,
+        epsilon=noise_width,
+        ext_EMD=ext_emd,
+        parallel=False,
+        seed=random_state,
+    )
+    components = np.asarray(decomposer.ceemdan(x, max_imf=_max_imfs_for_external(max_imfs)), dtype=float)
+    if components.ndim == 1:
+        components = components[np.newaxis, :]
+    if components.shape[0] <= 1:
+        return np.empty((0, x.size)), x.copy()
+    imfs = components[:-1]
+    residue = components[-1]
+    if max_imfs is not None:
+        imfs = imfs[:max_imfs]
+        residue = x - imfs.sum(axis=0)
+    return imfs, residue
 
 
 def iceemdan(
@@ -396,7 +260,13 @@ def iceemdan(
     imfs: list[np.ndarray] = [x_norm - current_mean]
     mode_index = 1
 
-    while not _is_terminal_residue(current_mean):
+    while _can_extract_external_imf(
+        current_mean,
+        max_siftings=max_siftings,
+        stop_sd=stop_sd,
+        envelope_mean_tol=envelope_mean_tol,
+        emd_backend=emd_backend,
+    ):
         if max_imfs is not None and len(imfs) >= max_imfs:
             break
 

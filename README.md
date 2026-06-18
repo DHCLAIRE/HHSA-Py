@@ -5,9 +5,8 @@ Python Authors: Ting & Codex
 This repository implements a compact, inspectable Holo-Hilbert Spectral Analysis pipeline for one-dimensional neural and biomedical time series. The code is designed to be easy to compare with MATLAB while still exposing a clean Python package interface.
 
 The pipeline accepts one-dimensional signals, multi-channel arrays, WAV audio,
-and MNE-Python Raw/Epochs/Evoked-style EEG/MEG objects. Decomposition uses
-external EMD libraries when available: EMD-Python first, PyEMD second, and the
-local implementation only as a fallback.
+and MNE-Python Raw/Epochs/Evoked-style EEG/MEG objects. EMD is imported from
+EMD-Python or PyEMD; CEEMDAN is imported from PyEMD.
 
 The pipeline follows the holospectrum workflow:
 
@@ -365,7 +364,7 @@ Recommended first MEG verification:
 - `HHSAPipeline.ensemble_size`: number of noise realizations for CEEMDAN/ICEEMDAN.
 - `HHSAPipeline.noise_width`: relative noise scale for ensemble decomposition.
 - `HHSAPipeline.random_state`: seed used for reproducible ensemble noise.
-- `HHSAPipeline.emd_backend`: EMD backend selector. Use `"auto"`, `"emd-python"`, `"pyemd"`, or `"local"`.
+- `HHSAPipeline.emd_backend`: EMD backend selector. Use `"auto"`, `"emd-python"`, or `"pyemd"`.
 - `HHSAPipeline.fit(signal)`: runs HHSA with the pipeline's stored decomposition, frequency, and ensemble parameters. It accepts 1-D arrays, multi-channel arrays, WAV paths, and MNE Raw/Epochs/Evoked-like objects.
 - `HHSAPipeline.summarize(result)`: returns common summary outputs from an `HHSAResult`, including mode energy, frequency bins, marginal spectrum, HHT, holospectrum, and reconstruction error. For multi-channel input, it returns one summary per channel.
 
@@ -380,8 +379,8 @@ Recommended first MEG verification:
 
 ### `hhsa.decomposition`
 
-- `emd(signal, ...)`: Empirical Mode Decomposition wrapper. With `backend="auto"`, it tries EMD-Python, then PyEMD, then the local fallback. Returns `(imfs, residue)`.
-- `ceemdan(signal, ...)`: compact Complete Ensemble EMD with Adaptive Noise. Returns `(imfs, residue)` and is useful as a baseline.
+- `emd(signal, ...)`: Empirical Mode Decomposition wrapper. With `backend="auto"`, it tries EMD-Python, then PyEMD. Returns `(imfs, residue)`.
+- `ceemdan(signal, ...)`: PyEMD Complete Ensemble EMD with Adaptive Noise wrapper. Returns `(imfs, residue)` and is useful as a baseline.
 - `iceemdan(signal, ...)`: Improved CEEMDAN-style decomposition following the MATLAB ICEEMDAN structure. Returns `(imfs, residue)` for direct use in HHSA.
 
 ### `hhsa.frequency`

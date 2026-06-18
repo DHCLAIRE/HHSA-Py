@@ -45,7 +45,7 @@ class HHSAPipeline:
         Optional seed for reproducible ensemble noise.
     emd_backend:
         EMD implementation to use. ``"auto"`` tries EMD-Python, then PyEMD,
-        then the compact local fallback.
+        using only imported EMD libraries.
     """
 
     sample_rate: float | None = None
