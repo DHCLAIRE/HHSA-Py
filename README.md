@@ -19,40 +19,36 @@ The pipeline follows the holospectrum workflow:
 
 ## Install
 
-From the repository root, install the package with pip:
+Choose one of two install paths.
 
-```bash
-python3 -m pip install .
-```
+### Option 1: pip install
 
-This installs the core scientific stack plus EMD-Python (`emd`), PyEMD
-(`EMD-signal`, imported as `PyEMD`), and MNE-Python (`mne`).
-
-Install in editable mode when you are developing the code:
-
-```bash
-python3 -m pip install -e ".[dev,plot]"
-```
-
-For notebook use, install the notebook extra too:
-
-```bash
-python3 -m pip install -e ".[dev,plot,notebook]"
-```
-
-Install directly from GitHub after the repository is pushed:
-
-```bash
-python3 -m pip install "git+https://github.com/DHCLAIRE/HHSA-Py.git"
-```
-
-If the package is later published to PyPI under the `hhsa_tools` package name, install it with:
+Install from PyPI after the package is published:
 
 ```bash
 python3 -m pip install hhsa_tools
 ```
 
-Run the test suite:
+This installs the core scientific stack plus EMD-Python (`emd`), PyEMD
+(`EMD-signal`, imported as `PyEMD`), and MNE-Python (`mne`).
+
+### Option 2: download the full repository package
+
+Download or clone the full repository, then install it from the repository root:
+
+```bash
+git clone https://github.com/DHCLAIRE/HHSA-Py.git
+cd HHSA-Py
+python3 -m pip install .
+```
+
+For development or notebook work from the downloaded repository, install extras:
+
+```bash
+python3 -m pip install -e ".[dev,plot,notebook]"
+```
+
+After installing from the repository, run the test suite:
 
 ```bash
 python3 -m pytest -q
