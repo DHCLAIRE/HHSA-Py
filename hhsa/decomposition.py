@@ -13,6 +13,7 @@ from typing import Literal
 import numpy as np
 
 EMDBackend = Literal["auto", "emd-python", "pyemd"]
+EMDPythonSift = Literal["sift", "ensemble_sift", "mask_sift"]
 
 
 def _max_imfs_for_external(max_imfs: int | None) -> int:
@@ -38,16 +39,43 @@ def _emd_with_emd_python(
     max_imfs: int | None,
     max_siftings: int,
     stop_sd: float,
+    sift_method: EMDPythonSift,
+    ensemble_size: int,
+    noise_width: float,
+    mask_freqs: np.ndarray | float | None,
+    mask_amp: float,
+    mask_amp_mode: str,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Run EMD-Python's sift implementation and convert output orientation."""
+    """Run an EMD-Python sift variant and convert output orientation."""
 
     x = _as_1d(signal)
-    sift = import_module("emd.sift")
+    sift_module = import_module("emd.sift")
+    sift_function = getattr(sift_module, sift_method)
     imf_opts = {"sd_thresh": stop_sd, "max_iters": max_siftings}
+    if sift_method == "sift":
+        kwargs = {"max_imfs": max_imfs, "imf_opts": imf_opts}
+    elif sift_method == "ensemble_sift":
+        kwargs = {
+            "max_imfs": max_imfs,
+            "nensembles": ensemble_size,
+            "ensemble_noise": noise_width,
+            "imf_opts": imf_opts,
+        }
+    elif sift_method == "mask_sift":
+        kwargs = {
+            "max_imfs": max_imfs,
+            "mask_freqs": mask_freqs,
+            "mask_amp": mask_amp,
+            "mask_amp_mode": mask_amp_mode,
+            "imf_opts": imf_opts,
+        }
+    else:
+        raise ValueError("sift_method must be 'sift', 'ensemble_sift', or 'mask_sift'")
     try:
-        modes = sift.sift(x, max_imfs=max_imfs, imf_opts=imf_opts)
+        modes = sift_function(x, **kwargs)
     except TypeError:
-        modes = sift.sift(x, max_imfs=max_imfs)
+        kwargs.pop("imf_opts", None)
+        modes = sift_function(x, **kwargs)
     modes = np.asarray(modes, dtype=float)
     if modes.ndim == 1:
         modes = modes[:, np.newaxis]
@@ -93,6 +121,12 @@ def emd(
     stop_sd: float = 0.2,
     envelope_mean_tol: float = 0.1,
     backend: EMDBackend = "auto",
+    sift_method: EMDPythonSift = "sift",
+    ensemble_size: int = 64,
+    noise_width: float = 0.2,
+    mask_freqs: np.ndarray | float | None = None,
+    mask_amp: float = 1.0,
+    mask_amp_mode: str = "ratio_sig",
 ) -> tuple[np.ndarray, np.ndarray]:
     """Decompose a signal into IMFs and a residue.
 
@@ -109,8 +143,16 @@ def emd(
                     max_imfs=max_imfs,
                     max_siftings=max_siftings,
                     stop_sd=stop_sd,
+                    sift_method=sift_method,
+                    ensemble_size=ensemble_size,
+                    noise_width=noise_width,
+                    mask_freqs=mask_freqs,
+                    mask_amp=mask_amp,
+                    mask_amp_mode=mask_amp_mode,
                 )
             if selected == "pyemd":
+                if sift_method != "sift":
+                    raise ValueError("PyEMD backend only supports sift_method='sift'")
                 return _emd_with_pyemd(
                     signal,
                     max_imfs=max_imfs,
@@ -125,6 +167,54 @@ def emd(
     if last_error is not None:
         raise last_error
     raise ValueError("backend must be 'auto', 'emd-python', or 'pyemd'")
+
+
+def ensemble_sift(
+    signal: np.ndarray,
+    *,
+    max_imfs: int | None = None,
+    ensemble_size: int = 64,
+    noise_width: float = 0.2,
+    max_siftings: int = 50,
+    stop_sd: float = 0.2,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Decompose a signal with EMD-Python's ensemble sift."""
+
+    return emd(
+        signal,
+        max_imfs=max_imfs,
+        max_siftings=max_siftings,
+        stop_sd=stop_sd,
+        backend="emd-python",
+        sift_method="ensemble_sift",
+        ensemble_size=ensemble_size,
+        noise_width=noise_width,
+    )
+
+
+def mask_sift(
+    signal: np.ndarray,
+    *,
+    max_imfs: int | None = None,
+    mask_freqs: np.ndarray | float | None = None,
+    mask_amp: float = 1.0,
+    mask_amp_mode: str = "ratio_sig",
+    max_siftings: int = 50,
+    stop_sd: float = 0.2,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Decompose a signal with EMD-Python's mask sift."""
+
+    return emd(
+        signal,
+        max_imfs=max_imfs,
+        max_siftings=max_siftings,
+        stop_sd=stop_sd,
+        backend="emd-python",
+        sift_method="mask_sift",
+        mask_freqs=mask_freqs,
+        mask_amp=mask_amp,
+        mask_amp_mode=mask_amp_mode,
+    )
 
 
 def _normalize_noise(noise: np.ndarray) -> np.ndarray:

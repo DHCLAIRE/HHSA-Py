@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from hhsa import ceemdan, generalized_zero_crossing, iceemdan, mode_energy, quadrature_frequency, run_hhsa, run_hhsa_dataset
 
@@ -41,6 +42,26 @@ def test_hhsa_pipeline_returns_modes_for_am_signal():
     assert result.hht.shape == (result.carrier_bins.size, x.size)
     assert result.holospectrum.shape == (result.carrier_bins.size, result.am_bins.size)
     assert np.all(mode_energy(result.imfs) > 0)
+
+
+@pytest.mark.parametrize("method", ["sift", "ensemble_sift", "mask_sift", "ceemdan"])
+def test_hhsa_pipeline_supports_imported_sifting_options(method):
+    sample_rate = 100.0
+    t = np.arange(0, 1, 1 / sample_rate)
+    x = np.sin(2 * np.pi * 10 * t)
+
+    result = run_hhsa(
+        x,
+        sample_rate,
+        decomposition=method,
+        frequency_method="quad",
+        max_imfs=2,
+        max_am_imfs=1,
+        ensemble_size=4,
+        mask_freqs=10 / sample_rate,
+    )
+
+    assert result.imfs.shape[1] == x.size
 
 
 def test_hhsa_dataset_runs_multichannel_array():

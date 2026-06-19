@@ -22,7 +22,24 @@ def pytest_configure():
         modes = _fake_imfs(signal, max_imfs=max_imfs)
         return modes.T
 
+    def ensemble_sift(signal, max_imfs=None, nensembles=4, ensemble_noise=0.2, imf_opts=None):
+        modes = _fake_imfs(signal, max_imfs=max_imfs)
+        return modes.T
+
+    def mask_sift(
+        signal,
+        max_imfs=None,
+        mask_freqs=None,
+        mask_amp=1.0,
+        mask_amp_mode="ratio_sig",
+        imf_opts=None,
+    ):
+        modes = _fake_imfs(signal, max_imfs=max_imfs)
+        return modes.T
+
     sift_module.sift = sift
+    sift_module.ensemble_sift = ensemble_sift
+    sift_module.mask_sift = mask_sift
     emd_module.sift = sift_module
     sys.modules.setdefault("emd", emd_module)
     sys.modules.setdefault("emd.sift", sift_module)

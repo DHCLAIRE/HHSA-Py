@@ -131,6 +131,27 @@ from hhsa import iceemdan
 imfs, residue = iceemdan(signal, ensemble_size=100, noise_width=0.2, random_state=13)
 ```
 
+## Decomposition Options
+
+The HHSA pipeline can use several imported decomposition options:
+
+- `decomposition="sift"` or `"emd"`: EMD-Python standard sift.
+- `decomposition="ensemble_sift"`: EMD-Python ensemble sift.
+- `decomposition="mask_sift"`: EMD-Python masking sift. Use `mask_freqs`, `mask_amp`, and `mask_amp_mode` to control masks.
+- `decomposition="ceemdan"`: PyEMD CEEMDAN.
+- `decomposition="iceemdan"`: project ICEEMDAN wrapper using imported EMD calls internally.
+
+```python
+result = run_hhsa(
+    signal,
+    sample_rate,
+    decomposition="mask_sift",
+    mask_freqs=20 / sample_rate,
+    mask_amp=1.0,
+    mask_amp_mode="ratio_sig",
+)
+```
+
 ## Tutorials
 
 ### Tutorial 1: Run HHSA With `HHSAPipeline`
@@ -287,7 +308,7 @@ results = pipeline.fit(stereo_array, channel_axis="last")
    For arrays, remove NaNs, detrend if needed, and keep the sampling rate in Hz. For MNE objects and WAV paths, HHSA can infer the sampling rate.
 
 2. Choose the first-layer decomposition.
-   Use `decomposition="iceemdan"` for the main HHSA direction, `decomposition="ceemdan"` as a CEEMDAN baseline, and `decomposition="emd"` for fast debugging.
+   Use `decomposition="sift"` or `"emd"` for EMD-Python standard sift, `"ensemble_sift"` for EMD-Python ensemble sift, `"mask_sift"` for EMD-Python masking sift, `"ceemdan"` for PyEMD CEEMDAN, and `"iceemdan"` for the ICEEMDAN wrapper.
 
 3. Choose the instantaneous-frequency estimator.
    Use `frequency_method="quad"` for Hilbert/quadrature phase, `"gzc"` for Generalized Zero-Crossing, or `"hybrid"` to combine both estimates.
@@ -357,7 +378,7 @@ Recommended first MEG verification:
 
 - `HHSAPipeline(sample_rate, ...)`: notebook-friendly class wrapper around the full HHSA pipeline. Store common analysis settings once, then call `fit(signal)` for each signal.
 - `HHSAPipeline.sample_rate`: sampling rate in Hz, used by all frequency estimates.
-- `HHSAPipeline.decomposition`: decomposition method for both HHSA layers. Use `"iceemdan"`, `"ceemdan"`, or `"emd"`.
+- `HHSAPipeline.decomposition`: decomposition method for both HHSA layers. Use `"sift"`, `"emd"`, `"ensemble_sift"`, `"mask_sift"`, `"ceemdan"`, or `"iceemdan"`.
 - `HHSAPipeline.frequency_method`: instantaneous-frequency method. Use `"quad"`, `"gzc"`, or `"hybrid"`.
 - `HHSAPipeline.max_imfs`: maximum number of first-layer carrier IMFs. The default is `10`.
 - `HHSAPipeline.max_am_imfs`: maximum number of second-layer amplitude-modulation IMFs per carrier.
@@ -365,6 +386,7 @@ Recommended first MEG verification:
 - `HHSAPipeline.noise_width`: relative noise scale for ensemble decomposition.
 - `HHSAPipeline.random_state`: seed used for reproducible ensemble noise.
 - `HHSAPipeline.emd_backend`: EMD backend selector. Use `"auto"`, `"emd-python"`, or `"pyemd"`.
+- `HHSAPipeline.mask_freqs`, `mask_amp`, `mask_amp_mode`: mask-sift controls passed to EMD-Python when `decomposition="mask_sift"`.
 - `HHSAPipeline.fit(signal)`: runs HHSA with the pipeline's stored decomposition, frequency, and ensemble parameters. It accepts 1-D arrays, multi-channel arrays, WAV paths, and MNE Raw/Epochs/Evoked-like objects.
 - `HHSAPipeline.summarize(result)`: returns common summary outputs from an `HHSAResult`, including mode energy, frequency bins, marginal spectrum, HHT, holospectrum, and reconstruction error. For multi-channel input, it returns one summary per channel.
 
@@ -380,6 +402,8 @@ Recommended first MEG verification:
 ### `hhsa.decomposition`
 
 - `emd(signal, ...)`: Empirical Mode Decomposition wrapper. With `backend="auto"`, it tries EMD-Python, then PyEMD. Returns `(imfs, residue)`.
+- `ensemble_sift(signal, ...)`: EMD-Python ensemble sift wrapper. Returns `(imfs, residue)`.
+- `mask_sift(signal, ...)`: EMD-Python masking sift wrapper. Returns `(imfs, residue)`.
 - `ceemdan(signal, ...)`: PyEMD Complete Ensemble EMD with Adaptive Noise wrapper. Returns `(imfs, residue)` and is useful as a baseline.
 - `iceemdan(signal, ...)`: Improved CEEMDAN-style decomposition following the MATLAB ICEEMDAN structure. Returns `(imfs, residue)` for direct use in HHSA.
 

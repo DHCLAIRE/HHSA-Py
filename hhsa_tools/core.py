@@ -27,7 +27,8 @@ class HHSAPipeline:
         provide this value automatically.
     decomposition:
         First- and second-layer decomposition method. Supported values are
-        ``"iceemdan"``, ``"ceemdan"``, and ``"emd"``.
+        ``"iceemdan"``, ``"ceemdan"``, ``"emd"``, ``"sift"``,
+        ``"ensemble_sift"``, and ``"mask_sift"``.
     frequency_method:
         Instantaneous-frequency estimator. Use ``"quad"`` for Hilbert phase,
         ``"gzc"`` for Generalized Zero-Crossing, or ``"hybrid"`` to combine
@@ -46,6 +47,12 @@ class HHSAPipeline:
     emd_backend:
         EMD implementation to use. ``"auto"`` tries EMD-Python, then PyEMD,
         using only imported EMD libraries.
+    mask_freqs:
+        Mask frequencies passed to EMD-Python mask sift.
+    mask_amp:
+        Mask amplitude passed to EMD-Python mask sift.
+    mask_amp_mode:
+        Mask amplitude mode passed to EMD-Python mask sift.
     """
 
     sample_rate: float | None = None
@@ -57,6 +64,9 @@ class HHSAPipeline:
     noise_width: float = 0.2
     random_state: int | None = 13
     emd_backend: EMDBackend = "auto"
+    mask_freqs: np.ndarray | float | None = None
+    mask_amp: float = 1.0
+    mask_amp_mode: str = "ratio_sig"
 
     def fit(
         self,
@@ -106,6 +116,9 @@ class HHSAPipeline:
                 noise_width=self.noise_width,
                 random_state=self.random_state,
                 emd_backend=self.emd_backend,
+                mask_freqs=self.mask_freqs,
+                mask_amp=self.mask_amp,
+                mask_amp_mode=self.mask_amp_mode,
             )
         return run_hhsa(
             matrix[0],
@@ -118,6 +131,9 @@ class HHSAPipeline:
             noise_width=self.noise_width,
             random_state=self.random_state,
             emd_backend=self.emd_backend,
+            mask_freqs=self.mask_freqs,
+            mask_amp=self.mask_amp,
+            mask_amp_mode=self.mask_amp_mode,
         )
 
     def summarize(

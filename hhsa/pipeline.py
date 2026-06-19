@@ -9,12 +9,12 @@ from typing import Literal
 import numpy as np
 from scipy.io import wavfile
 
-from .decomposition import EMDBackend, ceemdan, emd, iceemdan
+from .decomposition import EMDBackend, ceemdan, emd, ensemble_sift, iceemdan, mask_sift
 from .frequency import frequency_transform
 from .statistics import SpectrumBins, hilbert_huang_spectrum, holospectrum, spectrum_bin_edges
 
 # Supported first- and second-layer decomposition method names.
-DecompositionMethod = Literal["emd", "ceemdan", "iceemdan"]
+DecompositionMethod = Literal["emd", "sift", "ensemble_sift", "mask_sift", "ceemdan", "iceemdan"]
 
 # Supported instantaneous-frequency estimator names.
 FrequencyMethod = Literal["quad", "gzc", "hybrid"]
@@ -70,16 +70,39 @@ def _decompose(
     max_siftings: int,
     stop_sd: float,
     emd_backend: EMDBackend,
+    mask_freqs: np.ndarray | float | None,
+    mask_amp: float,
+    mask_amp_mode: str,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Dispatch to the requested decomposition function with shared settings."""
 
-    if method == "emd":
+    if method in {"emd", "sift"}:
         return emd(
             signal,
             max_imfs=max_imfs,
             max_siftings=max_siftings,
             stop_sd=stop_sd,
             backend=emd_backend,
+            sift_method="sift",
+        )
+    if method == "ensemble_sift":
+        return ensemble_sift(
+            signal,
+            max_imfs=max_imfs,
+            ensemble_size=ensemble_size,
+            noise_width=noise_width,
+            max_siftings=max_siftings,
+            stop_sd=stop_sd,
+        )
+    if method == "mask_sift":
+        return mask_sift(
+            signal,
+            max_imfs=max_imfs,
+            mask_freqs=mask_freqs,
+            mask_amp=mask_amp,
+            mask_amp_mode=mask_amp_mode,
+            max_siftings=max_siftings,
+            stop_sd=stop_sd,
         )
     if method == "ceemdan":
         return ceemdan(
@@ -103,7 +126,7 @@ def _decompose(
             stop_sd=stop_sd,
             emd_backend=emd_backend,
         )
-    raise ValueError("method must be 'emd', 'ceemdan', or 'iceemdan'")
+    raise ValueError("method must be 'emd', 'sift', 'ensemble_sift', 'mask_sift', 'ceemdan', or 'iceemdan'")
 
 
 def _scale_audio_samples(data: np.ndarray) -> np.ndarray:
@@ -204,6 +227,9 @@ def run_hhsa(
     carrier_hist: SpectrumBins | None = None,
     am_hist: SpectrumBins | None = None,
     emd_backend: EMDBackend = "auto",
+    mask_freqs: np.ndarray | float | None = None,
+    mask_amp: float = 1.0,
+    mask_amp_mode: str = "ratio_sig",
 ) -> HHSAResult:
     """Run HHSA using the Holo-Hilbert spectrum pipeline.
 
@@ -231,6 +257,9 @@ def run_hhsa(
         max_siftings=max_siftings,
         stop_sd=stop_sd,
         emd_backend=emd_backend,
+        mask_freqs=mask_freqs,
+        mask_amp=mask_amp,
+        mask_amp_mode=mask_amp_mode,
     )
     if imfs.size == 0:
         empty = np.empty((0, x.size))
@@ -275,6 +304,9 @@ def run_hhsa(
             max_siftings=max_siftings,
             stop_sd=stop_sd,
             emd_backend=emd_backend,
+            mask_freqs=mask_freqs,
+            mask_amp=mask_amp,
+            mask_amp_mode=mask_amp_mode,
         )
         am_imfs.append(modes)
         am_residues.append(am_residue)
@@ -330,6 +362,9 @@ def run_hhsa_dataset(
     carrier_hist: SpectrumBins | None = None,
     am_hist: SpectrumBins | None = None,
     emd_backend: EMDBackend = "auto",
+    mask_freqs: np.ndarray | float | None = None,
+    mask_amp: float = 1.0,
+    mask_amp_mode: str = "ratio_sig",
 ) -> list[HHSAResult]:
     """Run HHSA independently for every channel in EEG, MEG, or audio data."""
 
@@ -353,6 +388,9 @@ def run_hhsa_dataset(
                 carrier_hist=carrier_hist,
                 am_hist=am_hist,
                 emd_backend=emd_backend,
+                mask_freqs=mask_freqs,
+                mask_amp=mask_amp,
+                mask_amp_mode=mask_amp_mode,
             )
         )
     return results
