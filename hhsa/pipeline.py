@@ -9,7 +9,7 @@ from typing import Literal
 import numpy as np
 from scipy.io import wavfile
 
-from .decomposition import DecompositionMethod, EMDBackend, decompose_signal
+from .decomposition import DecompositionMethod, EMDBackend, SiftAcceleration, decompose_signal
 from .frequency import frequency_transform
 from .statistics import SpectrumBins, hilbert_huang_spectrum, holospectrum, spectrum_bin_edges
 
@@ -157,6 +157,8 @@ def run_hhsa(
     mask_freqs: np.ndarray | float | None = None,
     mask_amp: float = 1.0,
     mask_amp_mode: str = "ratio_sig",
+    sift_acceleration: SiftAcceleration = "none",
+    n_jobs: int | None = None,
 ) -> HHSAResult:
     """Run HHSA using the Holo-Hilbert spectrum pipeline.
 
@@ -187,6 +189,8 @@ def run_hhsa(
         mask_freqs=mask_freqs,
         mask_amp=mask_amp,
         mask_amp_mode=mask_amp_mode,
+        sift_acceleration=sift_acceleration,
+        n_jobs=n_jobs,
     )
     if imfs.size == 0:
         empty = np.empty((0, x.size))
@@ -234,6 +238,8 @@ def run_hhsa(
             mask_freqs=mask_freqs,
             mask_amp=mask_amp,
             mask_amp_mode=mask_amp_mode,
+            sift_acceleration=sift_acceleration,
+            n_jobs=n_jobs,
         )
         am_imfs.append(modes)
         am_residues.append(am_residue)
@@ -304,6 +310,8 @@ def run_hhsa_dataset(
     mask_freqs: np.ndarray | float | None = None,
     mask_amp: float = 1.0,
     mask_amp_mode: str = "ratio_sig",
+    sift_acceleration: SiftAcceleration = "none",
+    n_jobs: int | None = None,
 ) -> list[HHSAResult]:
     """Run HHSA independently for every channel in EEG, MEG, or audio data."""
 
@@ -330,6 +338,8 @@ def run_hhsa_dataset(
                 mask_freqs=mask_freqs,
                 mask_amp=mask_amp,
                 mask_amp_mode=mask_amp_mode,
+                sift_acceleration=sift_acceleration,
+                n_jobs=n_jobs,
             )
         )
     return results

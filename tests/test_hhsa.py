@@ -16,6 +16,7 @@ from hhsa import (
     run_hhsa,
     run_hhsa_dataset,
 )
+import hhsa.decomposition as decomposition_module
 
 
 def test_frequency_estimators_track_sine():
@@ -154,12 +155,55 @@ def test_iceemdan_function_reconstructs_signal():
     np.testing.assert_allclose(imfs.sum(axis=0) + residue, x, atol=1e-10)
 
 
+def test_iceemdan_cpu_acceleration_reconstructs_signal():
+    sample_rate = 100.0
+    t = np.arange(0, 1, 1 / sample_rate)
+    x = np.sin(2 * np.pi * 12 * t) + 0.4 * np.sin(2 * np.pi * 4 * t)
+
+    imfs, residue = iceemdan(
+        x,
+        max_imfs=3,
+        ensemble_size=6,
+        noise_width=0.05,
+        random_state=7,
+        max_siftings=8,
+        sift_acceleration="cpu",
+        n_jobs=2,
+    )
+
+    assert imfs.shape[1] == x.size
+    np.testing.assert_allclose(imfs.sum(axis=0) + residue, x, atol=1e-10)
+
+
+def test_explicit_gpu_acceleration_requires_cupy(monkeypatch):
+    def import_without_cupy(name):
+        if name == "cupy":
+            raise ImportError("no cupy")
+        return __import__(name)
+
+    monkeypatch.setattr(decomposition_module, "import_module", import_without_cupy)
+
+    with pytest.raises(ImportError, match="requires CuPy"):
+        iceemdan(np.ones(16), sift_acceleration="gpu")
+
+
 def test_ceemdan_uses_external_pyemd_shape():
     sample_rate = 100.0
     t = np.arange(0, 1, 1 / sample_rate)
     x = np.sin(2 * np.pi * 8 * t)
 
     imfs, residue = ceemdan(x, max_imfs=2, ensemble_size=4, random_state=2)
+
+    assert imfs.shape[1] == x.size
+    np.testing.assert_allclose(imfs.sum(axis=0) + residue, x, atol=1e-10)
+
+
+def test_ceemdan_cpu_acceleration_uses_external_parallel_shape():
+    sample_rate = 100.0
+    t = np.arange(0, 1, 1 / sample_rate)
+    x = np.sin(2 * np.pi * 8 * t)
+
+    imfs, residue = ceemdan(x, max_imfs=2, ensemble_size=4, random_state=2, sift_acceleration="cpu", n_jobs=2)
 
     assert imfs.shape[1] == x.size
     np.testing.assert_allclose(imfs.sum(axis=0) + residue, x, atol=1e-10)

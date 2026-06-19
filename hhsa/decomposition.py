@@ -7,6 +7,8 @@ ICEEMDAN remains project code, but its internal EMD calls use those libraries.
 
 from __future__ import annotations
 
+import os
+from concurrent.futures import ThreadPoolExecutor
 from importlib import import_module
 from typing import Literal
 
@@ -14,6 +16,7 @@ import numpy as np
 
 EMDBackend = Literal["auto", "emd-python", "pyemd"]
 EMDPythonSift = Literal["sift", "ensemble_sift", "complete_ensemble_sift", "mask_sift", "iterated_mask_sift"]
+SiftAcceleration = Literal["none", "cpu", "gpu", "auto"]
 DecompositionMethod = Literal[
     "emd",
     "sift",
@@ -24,6 +27,100 @@ DecompositionMethod = Literal[
     "ceemdan",
     "iceemdan",
 ]
+
+_SIFT_ACCELERATION_OPTIONS = {"none", "cpu", "gpu", "auto"}
+
+
+def _validate_sift_acceleration(sift_acceleration: SiftAcceleration) -> SiftAcceleration:
+    """Validate the acceleration selector used around computationally heavy sifting."""
+
+    if sift_acceleration not in _SIFT_ACCELERATION_OPTIONS:
+        raise ValueError("sift_acceleration must be 'none', 'cpu', 'gpu', or 'auto'")
+    return sift_acceleration
+
+
+def _worker_count(n_jobs: int | None) -> int:
+    """Resolve sklearn-style worker counts without adding a runtime dependency."""
+
+    cpu_count = os.cpu_count() or 1
+    if n_jobs is None:
+        return cpu_count
+    if n_jobs == 0:
+        raise ValueError("n_jobs must be None, -1, or a non-zero integer")
+    if n_jobs < 0:
+        return max(1, cpu_count + 1 + n_jobs)
+    return max(1, int(n_jobs))
+
+
+def _should_parallelize(sift_acceleration: SiftAcceleration, n_jobs: int | None) -> bool:
+    """Return whether independent EMD calls should be farmed across CPU workers."""
+
+    return sift_acceleration in {"cpu", "gpu", "auto"} and _worker_count(n_jobs) > 1
+
+
+def _parallel_map(
+    function,
+    values: list[np.ndarray],
+    *,
+    sift_acceleration: SiftAcceleration,
+    n_jobs: int | None,
+) -> list[np.ndarray]:
+    """Map independent sifts in order, using threads when acceleration is enabled."""
+
+    if not _should_parallelize(sift_acceleration, n_jobs) or len(values) <= 1:
+        return [function(value) for value in values]
+    with ThreadPoolExecutor(max_workers=_worker_count(n_jobs)) as executor:
+        return list(executor.map(function, values))
+
+
+def _cupy_module(sift_acceleration: SiftAcceleration):
+    """Import CuPy only for explicit/automatic GPU acceleration."""
+
+    if sift_acceleration not in {"gpu", "auto"}:
+        return None
+    try:
+        cupy = import_module("cupy")
+    except (ImportError, ModuleNotFoundError):
+        if sift_acceleration == "gpu":
+            raise ImportError(
+                "sift_acceleration='gpu' requires CuPy. Install the CuPy package that matches your CUDA runtime."
+            )
+        return None
+    try:
+        if cupy.cuda.runtime.getDeviceCount() < 1:
+            return None
+    except Exception as exc:
+        if sift_acceleration == "gpu":
+            raise RuntimeError("sift_acceleration='gpu' requires a working CUDA device visible to CuPy") from exc
+        return None
+    return cupy
+
+
+def _batched_noise(
+    rng: np.random.Generator,
+    ensemble_size: int,
+    n_samples: int,
+    xp,
+) -> list[np.ndarray]:
+    """Generate ensemble white noise on NumPy or CuPy and return CPU arrays for EMD libraries."""
+
+    if xp is None:
+        return [rng.normal(size=n_samples) for _ in range(ensemble_size)]
+
+    seeds = rng.integers(0, np.iinfo(np.uint32).max, size=ensemble_size, dtype=np.uint32)
+    noises = []
+    for seed in seeds:
+        gpu_rng = xp.random.default_rng(int(seed))
+        noises.append(xp.asnumpy(gpu_rng.normal(size=n_samples)))
+    return noises
+
+
+def _mean_stack(arrays: list[np.ndarray], xp) -> np.ndarray:
+    """Average an ensemble on the GPU when available, otherwise use NumPy."""
+
+    if xp is None:
+        return np.mean(arrays, axis=0)
+    return xp.asnumpy(xp.mean(xp.asarray(arrays), axis=0))
 
 
 def _max_imfs_for_external(max_imfs: int | None) -> int:
@@ -360,22 +457,34 @@ def ceemdan(
     stop_sd: float = 0.2,
     envelope_mean_tol: float = 0.1,
     emd_backend: EMDBackend = "auto",
+    sift_acceleration: SiftAcceleration = "none",
+    n_jobs: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Decompose a signal with PyEMD's CEEMDAN implementation."""
+    """Decompose a signal with PyEMD's CEEMDAN implementation.
+
+    ``sift_acceleration="cpu"`` enables PyEMD's parallel CEEMDAN trials.
+    """
 
     x = _as_1d(signal)
+    sift_acceleration = _validate_sift_acceleration(sift_acceleration)
+    if sift_acceleration == "gpu":
+        raise ValueError("PyEMD CEEMDAN does not expose GPU sifting; use sift_acceleration='cpu' or ICEEMDAN")
     pyemd = import_module("PyEMD")
     ext_emd = pyemd.EMD()
     ext_emd.MAX_ITERATION = max_siftings
     ext_emd.std_thr = stop_sd
     ext_emd.range_thr = envelope_mean_tol
-    decomposer = pyemd.CEEMDAN(
-        trials=ensemble_size,
-        epsilon=noise_width,
-        ext_EMD=ext_emd,
-        parallel=False,
-        seed=random_state,
-    )
+    parallel = sift_acceleration in {"cpu", "auto"}
+    ceemdan_kwargs = {
+        "trials": ensemble_size,
+        "epsilon": noise_width,
+        "ext_EMD": ext_emd,
+        "parallel": parallel,
+        "seed": random_state,
+    }
+    if parallel:
+        ceemdan_kwargs["processes"] = _worker_count(n_jobs)
+    decomposer = pyemd.CEEMDAN(**ceemdan_kwargs)
     components = np.asarray(decomposer.ceemdan(x, max_imf=_max_imfs_for_external(max_imfs)), dtype=float)
     if components.ndim == 1:
         components = components[np.newaxis, :]
@@ -401,6 +510,8 @@ def iceemdan(
     envelope_mean_tol: float = 0.1,
     snr_flag: int = 1,
     emd_backend: EMDBackend = "auto",
+    sift_acceleration: SiftAcceleration = "none",
+    n_jobs: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Improved CEEMDAN-style decomposition.
 
@@ -408,9 +519,15 @@ def iceemdan(
     pre-decompose each white-noise realization, estimate the first local mean
     from noisy copies of the normalized signal, then obtain every next mode as
     the difference between consecutive averaged local means.
+
+    The sifting iterations themselves stay with EMD-Python/PyEMD. The
+    acceleration modes target the independent ensemble EMD calls and reductions,
+    which are the parallel part of noise-assisted EMD variants.
     """
 
     x = _as_1d(signal)
+    sift_acceleration = _validate_sift_acceleration(sift_acceleration)
+    xp = _cupy_module(sift_acceleration)
     if snr_flag not in {1, 2}:
         raise ValueError("snr_flag must be 1 or 2")
     x_std = np.std(x)
@@ -418,10 +535,9 @@ def iceemdan(
         return np.empty((0, x.size)), x.copy()
     x_norm = x / x_std
     rng = np.random.default_rng(random_state)
-    noise_modes: list[np.ndarray] = []
     noise_max_imfs = None if max_imfs is None else max_imfs + 1
-    for _ in range(ensemble_size):
-        noise = rng.normal(size=x.size)
+
+    def decompose_noise(noise: np.ndarray) -> np.ndarray:
         modes, residue = emd(
             noise,
             max_imfs=noise_max_imfs,
@@ -430,10 +546,17 @@ def iceemdan(
             envelope_mean_tol=envelope_mean_tol,
             backend=emd_backend,
         )
-        noise_modes.append(np.vstack((modes, residue[np.newaxis, :])))
+        return np.vstack((modes, residue[np.newaxis, :]))
 
-    first_means = []
-    for modes in noise_modes:
+    noises = _batched_noise(rng, ensemble_size, x.size, xp)
+    noise_modes = _parallel_map(
+        decompose_noise,
+        noises,
+        sift_acceleration=sift_acceleration,
+        n_jobs=n_jobs,
+    )
+
+    def first_mean(modes: np.ndarray) -> np.ndarray:
         noise = _normalize_noise(modes[0])
         noisy_signal = x_norm + noise_width * noise
         first, noisy_residue = emd(
@@ -444,9 +567,15 @@ def iceemdan(
             envelope_mean_tol=envelope_mean_tol,
             backend=emd_backend,
         )
-        first_means.append(noisy_residue if first.size else noisy_signal)
+        return noisy_residue if first.size else noisy_signal
 
-    current_mean = np.mean(first_means, axis=0)
+    first_means = _parallel_map(
+        first_mean,
+        noise_modes,
+        sift_acceleration=sift_acceleration,
+        n_jobs=n_jobs,
+    )
+    current_mean = _mean_stack(first_means, xp)
     imfs: list[np.ndarray] = [x_norm - current_mean]
     mode_index = 1
 
@@ -460,8 +589,7 @@ def iceemdan(
         if max_imfs is not None and len(imfs) >= max_imfs:
             break
 
-        next_means = []
-        for modes in noise_modes:
+        def next_mean(modes: np.ndarray) -> np.ndarray:
             if modes.shape[0] > mode_index:
                 noise = modes[mode_index]
                 if snr_flag == 2:
@@ -478,14 +606,20 @@ def iceemdan(
                 envelope_mean_tol=envelope_mean_tol,
                 backend=emd_backend,
             )
-            next_means.append(noisy_residue)
+            return noisy_residue
 
-        next_mean = np.mean(next_means, axis=0)
-        imf = current_mean - next_mean
+        next_means = _parallel_map(
+            next_mean,
+            noise_modes,
+            sift_acceleration=sift_acceleration,
+            n_jobs=n_jobs,
+        )
+        next_mean_array = _mean_stack(next_means, xp)
+        imf = current_mean - next_mean_array
         if np.allclose(imf, 0):
             break
         imfs.append(imf)
-        current_mean = next_mean
+        current_mean = next_mean_array
         mode_index += 1
 
     modes = np.vstack(imfs) * x_std
@@ -507,8 +641,12 @@ def decompose_signal(
     mask_freqs: np.ndarray | float | None = None,
     mask_amp: float = 1.0,
     mask_amp_mode: str = "ratio_sig",
+    sift_acceleration: SiftAcceleration = "none",
+    n_jobs: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Decompose a signal with one supported HHSA decomposition method."""
+
+    sift_acceleration = _validate_sift_acceleration(sift_acceleration)
 
     if method in {"emd", "sift"}:
         return emd(
@@ -569,6 +707,8 @@ def decompose_signal(
             max_siftings=max_siftings,
             stop_sd=stop_sd,
             emd_backend=emd_backend,
+            sift_acceleration=sift_acceleration,
+            n_jobs=n_jobs,
         )
     if method == "iceemdan":
         return iceemdan(
@@ -580,6 +720,8 @@ def decompose_signal(
             max_siftings=max_siftings,
             stop_sd=stop_sd,
             emd_backend=emd_backend,
+            sift_acceleration=sift_acceleration,
+            n_jobs=n_jobs,
         )
     raise ValueError(
         "method must be 'emd', 'sift', 'ensemble_sift', 'complete_ensemble_sift', "

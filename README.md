@@ -179,6 +179,62 @@ result = run_hhsa(
 )
 ```
 
+## Sifting Acceleration
+
+Sifting is the expensive part of EMD: each IMF repeatedly finds extrema,
+builds upper/lower envelopes, subtracts their mean, and checks a stopping rule.
+For noise-assisted EMD variants, the best acceleration target is the independent
+ensemble trials around those sifts rather than the sequential inner sifting loop
+itself. EMD was introduced by Huang et al. (1998), EEMD by Wu and Huang (2009),
+and ICEEMDAN by Colominas et al. (2014).
+
+CPU acceleration is available without extra packages for CEEMDAN and ICEEMDAN:
+
+```python
+result = run_hhsa(
+    signal,
+    sample_rate,
+    decomposition="iceemdan",
+    ensemble_size=100,
+    sift_acceleration="cpu",
+    n_jobs=-1,
+)
+```
+
+GPU acceleration for the project ICEEMDAN path is explicit and optional.
+Install the CuPy build that matches your CUDA runtime, then request the GPU
+path. The implementation accelerates ensemble noise generation and reductions
+with CuPy while keeping EMD-Python or PyEMD responsible for the numerically
+sensitive sifting calls. PyEMD CEEMDAN exposes CPU parallel trials, not GPU
+sifting.
+
+```python
+result = run_hhsa(
+    signal,
+    sample_rate,
+    decomposition="iceemdan",
+    ensemble_size=100,
+    sift_acceleration="gpu",
+    n_jobs=-1,
+)
+```
+
+Use `sift_acceleration="none"` for the original serial behavior,
+`"cpu"` for parallel CPU ensemble workers, `"gpu"` for CuPy-assisted ensemble
+work, or `"auto"` to use CuPy when available and CPU workers otherwise.
+For typical short EEG/MEG epochs, CPU ensemble parallelism is often the fastest
+minimum-command option; GPU becomes more useful as channel count, ensemble size,
+or signal length grows.
+
+References: Huang et al., "The empirical mode decomposition and the Hilbert
+spectrum for nonlinear and non-stationary time series analysis,"
+Proc. R. Soc. A, 1998, https://doi.org/10.1098/rspa.1998.0193;
+Wu and Huang, "Ensemble empirical mode decomposition: A noise-assisted data
+analysis method," Advances in Adaptive Data Analysis, 2009,
+https://doi.org/10.1142/S1793536909000047; Colominas et al., "Improved complete
+ensemble EMD: A suitable tool for biomedical signal processing," Biomedical
+Signal Processing and Control, 2014, https://doi.org/10.1016/j.bspc.2014.06.009.
+
 ## Tutorials
 
 ### Tutorial 1: Run HHSA With `HHSAPipeline`
@@ -495,8 +551,8 @@ Recommended first MEG verification:
 - `mask_sift(signal, ...)`: EMD-Python masking sift wrapper. Returns `(imfs, residue)`.
 - `iterated_mask_sift(signal, ...)`: EMD-Python iterated masking sift wrapper. Returns `(imfs, residue)`.
 - `decompose_signal(signal, method, ...)`: public dispatcher used by the pipeline and visualization helpers.
-- `ceemdan(signal, ...)`: PyEMD Complete Ensemble EMD with Adaptive Noise wrapper. Returns `(imfs, residue)` and is useful as a baseline.
-- `iceemdan(signal, ...)`: Improved CEEMDAN-style decomposition following the MATLAB ICEEMDAN structure. Returns `(imfs, residue)` for direct use in HHSA.
+- `ceemdan(signal, ...)`: PyEMD Complete Ensemble EMD with Adaptive Noise wrapper. Returns `(imfs, residue)` and supports `sift_acceleration="cpu"` plus `n_jobs` for PyEMD parallel trials.
+- `iceemdan(signal, ...)`: Improved CEEMDAN-style decomposition following the MATLAB ICEEMDAN structure. Returns `(imfs, residue)` and supports `sift_acceleration="cpu"`, `"gpu"`, or `"auto"` with `n_jobs`.
 
 ### `hhsa.frequency`
 

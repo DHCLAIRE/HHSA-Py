@@ -6,7 +6,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
-from .decomposition import DecompositionMethod, EMDBackend, decompose_signal
+from .decomposition import DecompositionMethod, EMDBackend, SiftAcceleration, decompose_signal
 from .pipeline import HHSAResult
 
 
@@ -79,6 +79,8 @@ def plot_sifting_options(
     mask_freqs: np.ndarray | float | None = None,
     mask_amp: float = 1.0,
     mask_amp_mode: str = "ratio_sig",
+    sift_acceleration: SiftAcceleration = "none",
+    n_jobs: int | None = None,
 ):
     """Plot IMF stacks from all requested EMD/CEEMDAN/ICEEMDAN options."""
 
@@ -102,6 +104,8 @@ def plot_sifting_options(
             mask_freqs=mask_freqs,
             mask_amp=mask_amp,
             mask_amp_mode=mask_amp_mode,
+            sift_acceleration=sift_acceleration,
+            n_jobs=n_jobs,
         )
         offset_scale = np.nanmax(np.abs(x)) or 1.0
         for idx, mode in enumerate(imfs):

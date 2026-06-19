@@ -1,6 +1,7 @@
 """Holo-Hilbert spectral analysis helpers."""
 
 from .decomposition import (
+    SiftAcceleration,
     ceemdan,
     complete_ensemble_sift,
     decompose_signal,
@@ -30,6 +31,7 @@ from .visualization import plot_am_fm, plot_decomposition, plot_sifting_options
 
 __all__ = [
     "HHSAResult",
+    "SiftAcceleration",
     "StatisticalTestResult",
     "as_channel_matrix",
     "ceemdan",

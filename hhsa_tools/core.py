@@ -21,7 +21,7 @@ from hhsa import (
     run_hhsa,
     run_hhsa_dataset,
 )
-from hhsa.decomposition import EMDBackend
+from hhsa.decomposition import EMDBackend, SiftAcceleration
 from hhsa.pipeline import ChannelAxis
 
 
@@ -58,6 +58,13 @@ class HHSAPipeline:
     emd_backend:
         EMD implementation to use. ``"auto"`` tries EMD-Python, then PyEMD,
         using only imported EMD libraries.
+    sift_acceleration:
+        Optional acceleration for computationally heavy sifting orchestration.
+        Use ``"cpu"`` for parallel ensemble workers or ``"gpu"`` for CuPy
+        ensemble generation/reductions plus parallel CPU sifts.
+    n_jobs:
+        Number of CPU workers for accelerated ensemble sifts. ``None`` and
+        ``-1`` use all available cores.
     mask_freqs:
         Mask frequencies passed to EMD-Python mask sift.
     mask_amp:
@@ -75,6 +82,8 @@ class HHSAPipeline:
     noise_width: float = 0.2
     random_state: int | None = 13
     emd_backend: EMDBackend = "auto"
+    sift_acceleration: SiftAcceleration = "none"
+    n_jobs: int | None = None
     mask_freqs: np.ndarray | float | None = None
     mask_amp: float = 1.0
     mask_amp_mode: str = "ratio_sig"
@@ -127,6 +136,8 @@ class HHSAPipeline:
                 noise_width=self.noise_width,
                 random_state=self.random_state,
                 emd_backend=self.emd_backend,
+                sift_acceleration=self.sift_acceleration,
+                n_jobs=self.n_jobs,
                 mask_freqs=self.mask_freqs,
                 mask_amp=self.mask_amp,
                 mask_amp_mode=self.mask_amp_mode,
@@ -142,6 +153,8 @@ class HHSAPipeline:
             noise_width=self.noise_width,
             random_state=self.random_state,
             emd_backend=self.emd_backend,
+            sift_acceleration=self.sift_acceleration,
+            n_jobs=self.n_jobs,
             mask_freqs=self.mask_freqs,
             mask_amp=self.mask_amp,
             mask_amp_mode=self.mask_amp_mode,
