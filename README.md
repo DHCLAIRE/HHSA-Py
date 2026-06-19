@@ -259,7 +259,33 @@ plt.title("Holo-Hilbert Spectrum")
 plt.show()
 ```
 
-### Tutorial 5: Run EEG or MEG Data From MNE-Python
+### Tutorial 5: Plot Sifting Options and AM/FM Tracks
+
+Use the built-in visualization helpers to inspect decomposition outputs and
+instantaneous amplitude/frequency tracks.
+
+```python
+from hhsa import plot_am_fm, plot_decomposition, plot_sifting_options
+
+fig, axes = plot_sifting_options(
+    signal,
+    sample_rate,
+    methods=("sift", "ensemble_sift", "mask_sift", "ceemdan", "iceemdan"),
+    max_imfs=5,
+    mask_freqs=20 / sample_rate,
+)
+
+fig, axes = plot_decomposition(
+    result.signal,
+    result.imfs,
+    result.residue,
+    sample_rate=result.sample_rate,
+)
+
+fig, axes = plot_am_fm(result, max_modes=5)
+```
+
+### Tutorial 6: Run EEG or MEG Data From MNE-Python
 
 Use this path for MNE `Raw`, `Epochs`, or `Evoked` objects. Sampling rate is
 read from `raw.info["sfreq"]`, and data are analyzed one channel at a time.
@@ -280,7 +306,7 @@ summaries = pipeline.summarize(results)
 print(len(results))
 ```
 
-### Tutorial 6: Run Multi-Channel Audio
+### Tutorial 7: Run Multi-Channel Audio
 
 WAV paths are read directly. Stereo or multi-channel audio returns one
 `HHSAResult` per channel.
@@ -302,7 +328,7 @@ pipeline = HHSAPipeline(sample_rate=44100, decomposition="iceemdan", max_imfs=10
 results = pipeline.fit(stereo_array, channel_axis="last")
 ```
 
-### Tutorial 7: Run Group Statistics
+### Tutorial 8: Run Group Statistics
 
 After running HHSA for two groups, compare features such as `mode_energy`,
 `marginal`, `hht`, `holospectrum`, or `am_frequency`.
@@ -452,3 +478,9 @@ Recommended first MEG verification:
 - `spectrum_bin_edges(hist)`: converts an EMD-style histogram tuple such as `(1, 100, 128, "log")` into bin centers and edges.
 - `hilbert_huang_spectrum(frequency, amplitude, hist)`: builds the 1D marginal spectrum and 2D HHT over carrier frequency x time.
 - `holospectrum(carrier_frequency, am_frequency, am_amplitude, carrier_hist, am_hist)`: builds the time-averaged Holo-Hilbert spectrum over carrier frequency x AM frequency.
+
+### `hhsa.visualization`
+
+- `plot_decomposition(signal, imfs, residue, ...)`: plots a signal, its IMFs, and final residue.
+- `plot_sifting_options(signal, sample_rate, ...)`: compares IMF stacks from sifting, ensemble sifting, mask sifting, CEEMDAN, and ICEEMDAN options.
+- `plot_am_fm(result, ...)`: plots instantaneous amplitude and instantaneous frequency tracks from an `HHSAResult`.

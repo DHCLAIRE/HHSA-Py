@@ -17,6 +17,7 @@ from .statistics import (
     orthogonality_index,
     spectrum_bin_edges,
 )
+from .visualization import plot_am_fm, plot_decomposition, plot_sifting_options
 
 __all__ = [
     "HHSAResult",
@@ -39,6 +40,9 @@ __all__ = [
     "mode_energy",
     "normalized_entropy",
     "orthogonality_index",
+    "plot_am_fm",
+    "plot_decomposition",
+    "plot_sifting_options",
     "quadrature_frequency",
     "run_hhsa",
     "run_hhsa_dataset",
