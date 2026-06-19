@@ -3,11 +3,14 @@ import pytest
 
 from hhsa import (
     ceemdan,
+    complete_ensemble_sift,
+    decompose_signal,
     generalized_zero_crossing,
     hhsa_feature_matrix,
     hhsa_permutation_test,
     hhsa_t_test,
     iceemdan,
+    iterated_mask_sift,
     mode_energy,
     quadrature_frequency,
     run_hhsa,
@@ -55,7 +58,10 @@ def test_hhsa_pipeline_returns_modes_for_am_signal():
     assert np.all(mode_energy(result.imfs) > 0)
 
 
-@pytest.mark.parametrize("method", ["sift", "ensemble_sift", "mask_sift", "ceemdan"])
+@pytest.mark.parametrize(
+    "method",
+    ["sift", "ensemble_sift", "complete_ensemble_sift", "mask_sift", "iterated_mask_sift", "ceemdan"],
+)
 def test_hhsa_pipeline_supports_imported_sifting_options(method):
     sample_rate = 100.0
     t = np.arange(0, 1, 1 / sample_rate)
@@ -73,6 +79,37 @@ def test_hhsa_pipeline_supports_imported_sifting_options(method):
     )
 
     assert result.imfs.shape[1] == x.size
+
+
+def test_public_decompose_signal_uses_emd_python_sift_options():
+    sample_rate = 100.0
+    t = np.arange(0, 1, 1 / sample_rate)
+    x = np.sin(2 * np.pi * 10 * t)
+
+    for method in ("complete_ensemble_sift", "iterated_mask_sift"):
+        imfs, residue = decompose_signal(
+            x,
+            method,
+            max_imfs=2,
+            ensemble_size=4,
+            mask_freqs=10 / sample_rate,
+            emd_backend="emd-python",
+        )
+
+        assert imfs.shape[1] == x.size
+        np.testing.assert_allclose(imfs.sum(axis=0) + residue, x, atol=1e-10)
+
+
+def test_direct_emd_python_sift_wrappers_reconstruct_signal():
+    sample_rate = 100.0
+    t = np.arange(0, 1, 1 / sample_rate)
+    x = np.sin(2 * np.pi * 10 * t)
+
+    for wrapper in (complete_ensemble_sift, iterated_mask_sift):
+        imfs, residue = wrapper(x, max_imfs=2)
+
+        assert imfs.shape[1] == x.size
+        np.testing.assert_allclose(imfs.sum(axis=0) + residue, x, atol=1e-10)
 
 
 def test_hhsa_dataset_runs_multichannel_array():

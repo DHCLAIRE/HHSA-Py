@@ -37,11 +37,13 @@ class HHSAPipeline:
     decomposition:
         First- and second-layer decomposition method. Supported values are
         ``"iceemdan"``, ``"ceemdan"``, ``"emd"``, ``"sift"``,
-        ``"ensemble_sift"``, and ``"mask_sift"``.
+        ``"ensemble_sift"``, ``"complete_ensemble_sift"``, ``"mask_sift"``,
+        and ``"iterated_mask_sift"``.
     frequency_method:
         Instantaneous-frequency estimator. Use ``"quad"`` for Hilbert phase,
-        ``"gzc"`` for Generalized Zero-Crossing, or ``"hybrid"`` to combine
-        both.
+        ``"gzc"`` for Generalized Zero-Crossing, ``"hybrid"`` to combine
+        both, or EMD-Python methods ``"hilbert"``, ``"direct_quad"``, and
+        ``"nht"``.
     max_imfs:
         Maximum number of first-layer carrier IMFs to extract. Defaults to 10.
     max_am_imfs:

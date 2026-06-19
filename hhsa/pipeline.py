@@ -9,15 +9,12 @@ from typing import Literal
 import numpy as np
 from scipy.io import wavfile
 
-from .decomposition import EMDBackend, ceemdan, emd, ensemble_sift, iceemdan, mask_sift
+from .decomposition import DecompositionMethod, EMDBackend, decompose_signal
 from .frequency import frequency_transform
 from .statistics import SpectrumBins, hilbert_huang_spectrum, holospectrum, spectrum_bin_edges
 
-# Supported first- and second-layer decomposition method names.
-DecompositionMethod = Literal["emd", "sift", "ensemble_sift", "mask_sift", "ceemdan", "iceemdan"]
-
 # Supported instantaneous-frequency estimator names.
-FrequencyMethod = Literal["quad", "gzc", "hybrid"]
+FrequencyMethod = Literal["quad", "gzc", "hybrid", "hilbert", "direct_quad", "nht"]
 
 # Supported array orientation hints for multi-channel arrays.
 ChannelAxis = Literal["auto", "first", "last"]
@@ -57,76 +54,6 @@ class HHSAResult:
 
         denom = np.linalg.norm(self.signal) + np.finfo(float).eps
         return float(np.linalg.norm(self.signal - self.reconstruction) / denom)
-
-
-def _decompose(
-    signal: np.ndarray,
-    method: DecompositionMethod,
-    *,
-    max_imfs: int | None,
-    ensemble_size: int,
-    noise_width: float,
-    random_state: int | None,
-    max_siftings: int,
-    stop_sd: float,
-    emd_backend: EMDBackend,
-    mask_freqs: np.ndarray | float | None,
-    mask_amp: float,
-    mask_amp_mode: str,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Dispatch to the requested decomposition function with shared settings."""
-
-    if method in {"emd", "sift"}:
-        return emd(
-            signal,
-            max_imfs=max_imfs,
-            max_siftings=max_siftings,
-            stop_sd=stop_sd,
-            backend=emd_backend,
-            sift_method="sift",
-        )
-    if method == "ensemble_sift":
-        return ensemble_sift(
-            signal,
-            max_imfs=max_imfs,
-            ensemble_size=ensemble_size,
-            noise_width=noise_width,
-            max_siftings=max_siftings,
-            stop_sd=stop_sd,
-        )
-    if method == "mask_sift":
-        return mask_sift(
-            signal,
-            max_imfs=max_imfs,
-            mask_freqs=mask_freqs,
-            mask_amp=mask_amp,
-            mask_amp_mode=mask_amp_mode,
-            max_siftings=max_siftings,
-            stop_sd=stop_sd,
-        )
-    if method == "ceemdan":
-        return ceemdan(
-            signal,
-            max_imfs=max_imfs,
-            ensemble_size=ensemble_size,
-            noise_width=noise_width,
-            random_state=random_state,
-            max_siftings=max_siftings,
-            stop_sd=stop_sd,
-            emd_backend=emd_backend,
-        )
-    if method == "iceemdan":
-        return iceemdan(
-            signal,
-            max_imfs=max_imfs,
-            ensemble_size=ensemble_size,
-            noise_width=noise_width,
-            random_state=random_state,
-            max_siftings=max_siftings,
-            stop_sd=stop_sd,
-            emd_backend=emd_backend,
-        )
-    raise ValueError("method must be 'emd', 'sift', 'ensemble_sift', 'mask_sift', 'ceemdan', or 'iceemdan'")
 
 
 def _scale_audio_samples(data: np.ndarray) -> np.ndarray:
@@ -247,7 +174,7 @@ def run_hhsa(
     if am_hist is None:
         am_hist = (max(sample_rate / x.size, 1e-6), sample_rate / 4.0, 64, "log")
 
-    imfs, residue = _decompose(
+    imfs, residue = decompose_signal(
         x,
         decomposition,
         max_imfs=max_imfs,
@@ -263,7 +190,7 @@ def run_hhsa(
     )
     if imfs.size == 0:
         empty = np.empty((0, x.size))
-        carrier_bins, marginal, hht = hilbert_huang_spectrum(empty, empty, carrier_hist)
+        carrier_bins, marginal, hht = hilbert_huang_spectrum(empty, empty, carrier_hist, sample_rate=sample_rate)
         am_bins, _ = spectrum_bin_edges(am_hist)
         return HHSAResult(
             x,
@@ -294,7 +221,7 @@ def run_hhsa(
 
     for mode_index, envelope in enumerate(amplitude):
         seed = None if random_state is None else random_state + mode_index + 1
-        modes, am_residue = _decompose(
+        modes, am_residue = decompose_signal(
             envelope - np.mean(envelope),
             decomposition,
             max_imfs=max_am_imfs,
@@ -320,8 +247,20 @@ def run_hhsa(
         am_phase.append(am_ip)
         am_frequency.append(am_freq)
 
-    carrier_bins, marginal, hht = hilbert_huang_spectrum(frequency, amplitude, carrier_hist)
-    carrier_bins, am_bins, holo = holospectrum(frequency, am_frequency, am_amplitude, carrier_hist, am_hist)
+    carrier_bins, marginal, hht = hilbert_huang_spectrum(
+        frequency,
+        amplitude,
+        carrier_hist,
+        sample_rate=sample_rate,
+    )
+    carrier_bins, am_bins, holo = holospectrum(
+        frequency,
+        am_frequency,
+        am_amplitude,
+        carrier_hist,
+        am_hist,
+        sample_rate=sample_rate,
+    )
 
     return HHSAResult(
         signal=x,

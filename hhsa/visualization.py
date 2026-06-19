@@ -6,8 +6,8 @@ from collections.abc import Sequence
 
 import numpy as np
 
-from .decomposition import EMDBackend
-from .pipeline import DecompositionMethod, HHSAResult, _decompose
+from .decomposition import DecompositionMethod, EMDBackend, decompose_signal
+from .pipeline import HHSAResult
 
 
 def _get_pyplot():
@@ -60,7 +60,15 @@ def plot_sifting_options(
     signal: np.ndarray,
     sample_rate: float,
     *,
-    methods: Sequence[DecompositionMethod] = ("sift", "ensemble_sift", "mask_sift", "ceemdan", "iceemdan"),
+    methods: Sequence[DecompositionMethod] = (
+        "sift",
+        "ensemble_sift",
+        "complete_ensemble_sift",
+        "mask_sift",
+        "iterated_mask_sift",
+        "ceemdan",
+        "iceemdan",
+    ),
     max_imfs: int | None = 5,
     ensemble_size: int = 32,
     noise_width: float = 0.2,
@@ -81,7 +89,7 @@ def plot_sifting_options(
     if len(methods) == 1:
         axes = np.asarray([axes])
     for axis, method in zip(axes, methods):
-        imfs, residue = _decompose(
+        imfs, residue = decompose_signal(
             x,
             method,
             max_imfs=max_imfs,

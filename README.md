@@ -28,8 +28,15 @@ Install from PyPI after the package is published:
 python3 -m pip install hhsa_tools
 ```
 
-This installs the core scientific stack plus EMD-Python (`emd`), PyEMD
-(`EMD-signal`, imported as `PyEMD`), and MNE-Python (`mne`).
+This installs the core scientific stack plus EMD-Python (`emd`). Add extras
+when you need optional integrations:
+
+```bash
+python3 -m pip install "hhsa_tools[ceemdan,neuro,plot,notebook]"
+```
+
+`ceemdan` installs PyEMD (`EMD-signal`, imported as `PyEMD`), and `neuro`
+installs MNE-Python (`mne`).
 
 ### Option 2: download the full repository package
 
@@ -44,7 +51,7 @@ python3 -m pip install .
 For development or notebook work from the downloaded repository, install extras:
 
 ```bash
-python3 -m pip install -e ".[dev,plot,notebook]"
+python3 -m pip install -e ".[dev,all]"
 ```
 
 After installing from the repository, run the test suite:
@@ -52,6 +59,21 @@ After installing from the repository, run the test suite:
 ```bash
 python3 -m pytest -q
 ```
+
+## EMD-Python Integration
+
+This package is structured to merge cleanly with EMD-Python workflows:
+
+- Decomposition uses `emd.sift.sift`, `emd.sift.ensemble_sift`,
+  `emd.sift.complete_ensemble_sift`, `emd.sift.mask_sift`, and
+  `emd.sift.iterated_mask_sift` when EMD-Python is available.
+- Instantaneous phase, frequency, and amplitude can use
+  `emd.spectra.frequency_transform` for EMD-Python methods.
+- Hilbert-Huang and Holo-Hilbert spectra call `emd.spectra.hilberthuang` and
+  `emd.spectra.holospectrum` when compatible, with local fallbacks for
+  portability.
+- HHSA stores IMFs as `modes x samples`; EMD-Python returns many arrays as
+  `samples x modes`. The package conversion happens at the API boundary.
 
 ## Quick Start
 
@@ -133,11 +155,16 @@ imfs, residue = iceemdan(signal, ensemble_size=100, noise_width=0.2, random_stat
 
 ## Decomposition Options
 
-The HHSA pipeline can use several imported decomposition options:
+The HHSA pipeline uses EMD-Python's public `emd.sift` API when
+`emd_backend="emd-python"` or when `emd_backend="auto"` can import it.
+Returned IMFs are converted from EMD-Python's `samples x modes` convention to
+HHSA's `modes x samples` convention.
 
 - `decomposition="sift"` or `"emd"`: EMD-Python standard sift.
 - `decomposition="ensemble_sift"`: EMD-Python ensemble sift.
+- `decomposition="complete_ensemble_sift"`: EMD-Python complete ensemble sift.
 - `decomposition="mask_sift"`: EMD-Python masking sift. Use `mask_freqs`, `mask_amp`, and `mask_amp_mode` to control masks.
+- `decomposition="iterated_mask_sift"`: EMD-Python iterated masking sift.
 - `decomposition="ceemdan"`: PyEMD CEEMDAN.
 - `decomposition="iceemdan"`: project ICEEMDAN wrapper using imported EMD calls internally.
 
@@ -270,7 +297,15 @@ from hhsa import plot_am_fm, plot_decomposition, plot_sifting_options
 fig, axes = plot_sifting_options(
     signal,
     sample_rate,
-    methods=("sift", "ensemble_sift", "mask_sift", "ceemdan", "iceemdan"),
+    methods=(
+        "sift",
+        "ensemble_sift",
+        "complete_ensemble_sift",
+        "mask_sift",
+        "iterated_mask_sift",
+        "ceemdan",
+        "iceemdan",
+    ),
     max_imfs=5,
     mask_freqs=20 / sample_rate,
 )
@@ -358,10 +393,10 @@ print(perm_result.statistic, perm_result.pvalue)
    For arrays, remove NaNs, detrend if needed, and keep the sampling rate in Hz. For MNE objects and WAV paths, HHSA can infer the sampling rate.
 
 2. Choose the first-layer decomposition.
-   Use `decomposition="sift"` or `"emd"` for EMD-Python standard sift, `"ensemble_sift"` for EMD-Python ensemble sift, `"mask_sift"` for EMD-Python masking sift, `"ceemdan"` for PyEMD CEEMDAN, and `"iceemdan"` for the ICEEMDAN wrapper.
+   Use `decomposition="sift"` or `"emd"` for EMD-Python standard sift, `"ensemble_sift"` for EMD-Python ensemble sift, `"complete_ensemble_sift"` for EMD-Python complete ensemble sift, `"mask_sift"` for EMD-Python masking sift, `"iterated_mask_sift"` for EMD-Python iterated masking sift, `"ceemdan"` for PyEMD CEEMDAN, and `"iceemdan"` for the ICEEMDAN wrapper.
 
 3. Choose the instantaneous-frequency estimator.
-   Use `frequency_method="quad"` for Hilbert/quadrature phase, `"gzc"` for Generalized Zero-Crossing, or `"hybrid"` to combine both estimates.
+   Use `frequency_method="quad"` for Hilbert/quadrature phase, `"gzc"` for Generalized Zero-Crossing, `"hybrid"` to combine both estimates, or EMD-Python-compatible `"hilbert"`, `"direct_quad"`, and `"nht"` methods when EMD-Python is installed.
 
 4. Run the second layer.
    `run_hhsa` automatically decomposes every first-layer instantaneous-amplitude trace and stores the second-layer outputs in `result.am_imfs`, `result.am_amplitude`, and `result.am_frequency`.
@@ -412,7 +447,8 @@ Recommended first MEG verification:
 │   ├── decomposition.py
 │   ├── frequency.py
 │   ├── pipeline.py
-│   └── statistics.py
+│   ├── statistics.py
+│   └── visualization.py
 ├── hhsa_tools/
 │   ├── __init__.py
 │   └── core.py
@@ -428,8 +464,8 @@ Recommended first MEG verification:
 
 - `HHSAPipeline(sample_rate, ...)`: notebook-friendly class wrapper around the full HHSA pipeline. Store common analysis settings once, then call `fit(signal)` for each signal.
 - `HHSAPipeline.sample_rate`: sampling rate in Hz, used by all frequency estimates.
-- `HHSAPipeline.decomposition`: decomposition method for both HHSA layers. Use `"sift"`, `"emd"`, `"ensemble_sift"`, `"mask_sift"`, `"ceemdan"`, or `"iceemdan"`.
-- `HHSAPipeline.frequency_method`: instantaneous-frequency method. Use `"quad"`, `"gzc"`, or `"hybrid"`.
+- `HHSAPipeline.decomposition`: decomposition method for both HHSA layers. Use `"sift"`, `"emd"`, `"ensemble_sift"`, `"complete_ensemble_sift"`, `"mask_sift"`, `"iterated_mask_sift"`, `"ceemdan"`, or `"iceemdan"`.
+- `HHSAPipeline.frequency_method`: instantaneous-frequency method. Use `"quad"`, `"gzc"`, `"hybrid"`, `"hilbert"`, `"direct_quad"`, or `"nht"`.
 - `HHSAPipeline.max_imfs`: maximum number of first-layer carrier IMFs. The default is `10`.
 - `HHSAPipeline.max_am_imfs`: maximum number of second-layer amplitude-modulation IMFs per carrier.
 - `HHSAPipeline.ensemble_size`: number of noise realizations for CEEMDAN/ICEEMDAN.
@@ -455,7 +491,10 @@ Recommended first MEG verification:
 
 - `emd(signal, ...)`: Empirical Mode Decomposition wrapper. With `backend="auto"`, it tries EMD-Python, then PyEMD. Returns `(imfs, residue)`.
 - `ensemble_sift(signal, ...)`: EMD-Python ensemble sift wrapper. Returns `(imfs, residue)`.
+- `complete_ensemble_sift(signal, ...)`: EMD-Python complete ensemble sift wrapper. Returns `(imfs, residue)`.
 - `mask_sift(signal, ...)`: EMD-Python masking sift wrapper. Returns `(imfs, residue)`.
+- `iterated_mask_sift(signal, ...)`: EMD-Python iterated masking sift wrapper. Returns `(imfs, residue)`.
+- `decompose_signal(signal, method, ...)`: public dispatcher used by the pipeline and visualization helpers.
 - `ceemdan(signal, ...)`: PyEMD Complete Ensemble EMD with Adaptive Noise wrapper. Returns `(imfs, residue)` and is useful as a baseline.
 - `iceemdan(signal, ...)`: Improved CEEMDAN-style decomposition following the MATLAB ICEEMDAN structure. Returns `(imfs, residue)` for direct use in HHSA.
 
@@ -463,7 +502,7 @@ Recommended first MEG verification:
 
 - `quadrature_frequency(imf, sample_rate)`: computes instantaneous amplitude, phase, and frequency using the Hilbert transform.
 - `generalized_zero_crossing(imf, sample_rate)`: estimates instantaneous frequency from zero crossings and extrema.
-- `frequency_transform(imfs, sample_rate, method=...)`: applies a frequency estimator to every IMF. Supported methods are `"quad"`, `"gzc"`, and `"hybrid"`.
+- `frequency_transform(imfs, sample_rate, method=...)`: applies a frequency estimator to every IMF. Supported methods are `"quad"`, `"gzc"`, `"hybrid"`, `"hilbert"`, `"direct_quad"`, and `"nht"`. EMD-Python methods are delegated to `emd.spectra.frequency_transform` when available.
 
 ### `hhsa.statistics`
 

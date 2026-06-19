@@ -1,6 +1,15 @@
 """Holo-Hilbert spectral analysis helpers."""
 
-from .decomposition import ceemdan, emd, ensemble_sift, iceemdan, mask_sift
+from .decomposition import (
+    ceemdan,
+    complete_ensemble_sift,
+    decompose_signal,
+    emd,
+    ensemble_sift,
+    iceemdan,
+    iterated_mask_sift,
+    mask_sift,
+)
 from .frequency import frequency_transform, generalized_zero_crossing, quadrature_frequency
 from .pipeline import HHSAResult, as_channel_matrix, run_hhsa, run_hhsa_dataset
 from .statistics import (
@@ -24,6 +33,8 @@ __all__ = [
     "StatisticalTestResult",
     "as_channel_matrix",
     "ceemdan",
+    "complete_ensemble_sift",
+    "decompose_signal",
     "emd",
     "ensemble_sift",
     "frequency_transform",
@@ -35,6 +46,7 @@ __all__ = [
     "hilbert_huang_spectrum",
     "holospectrum",
     "iceemdan",
+    "iterated_mask_sift",
     "marginal_spectrum",
     "mask_sift",
     "mode_energy",

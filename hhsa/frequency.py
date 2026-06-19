@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from importlib import import_module
+
 import numpy as np
 from scipy.interpolate import interp1d
 from scipy.signal import hilbert
+
+EMDPythonFrequencyMethod = {"hilbert", "quad", "direct_quad", "nht"}
 
 
 def _sample_rate_to_dt(sample_rate: float) -> float:
@@ -98,6 +102,7 @@ def frequency_transform(
     sample_rate: float,
     *,
     method: str = "quad",
+    backend: str = "auto",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Return instantaneous amplitude, phase, and frequency for every IMF."""
 
@@ -105,20 +110,30 @@ def frequency_transform(
     if modes.ndim != 2:
         raise ValueError("imfs must have shape (n_modes, n_samples)")
 
+    selected = method.lower()
+    if backend in {"auto", "emd-python"} and selected in EMDPythonFrequencyMethod:
+        try:
+            spectra = import_module("emd.spectra")
+            phase, frequency, amplitude = spectra.frequency_transform(modes.T, sample_rate, selected)
+            return np.asarray(amplitude, dtype=float).T, np.asarray(phase, dtype=float).T, np.asarray(frequency, dtype=float).T
+        except (ImportError, ModuleNotFoundError, AttributeError, TypeError, ValueError):
+            if backend == "emd-python":
+                raise
+
     amplitudes = []
     phases = []
     frequencies = []
     for imf in modes:
         amp, phase, quad_freq = quadrature_frequency(imf, sample_rate)
-        if method.lower() == "quad":
+        if selected in {"quad", "hilbert", "direct_quad", "nht"}:
             freq = quad_freq
-        elif method.lower() == "gzc":
+        elif selected == "gzc":
             freq = generalized_zero_crossing(imf, sample_rate)
-        elif method.lower() in {"hybrid", "gzc_quad", "quad_gzc"}:
+        elif selected in {"hybrid", "gzc_quad", "quad_gzc"}:
             gzc = generalized_zero_crossing(imf, sample_rate)
             freq = np.where(gzc > 0, 0.5 * (gzc + quad_freq), quad_freq)
         else:
-            raise ValueError("method must be 'quad', 'gzc', or 'hybrid'")
+            raise ValueError("method must be 'quad', 'gzc', 'hybrid', 'hilbert', 'direct_quad', or 'nht'")
         amplitudes.append(amp)
         phases.append(phase)
         frequencies.append(freq)

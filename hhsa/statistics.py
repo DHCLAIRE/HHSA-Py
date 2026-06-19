@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib import import_module
 
 import numpy as np
 from scipy import stats
@@ -98,10 +99,96 @@ def spectrum_bin_edges(hist: SpectrumBins) -> tuple[np.ndarray, np.ndarray]:
     return centers, edges
 
 
+def _try_emd_hilbert_huang(
+    frequency: np.ndarray,
+    amplitude: np.ndarray,
+    hist: SpectrumBins,
+    sample_rate: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    """Compute HHT through EMD-Python when it is installed and compatible."""
+
+    try:
+        spectra = import_module("emd.spectra")
+        centers, edges = spectrum_bin_edges(hist)
+        freq_centers, time_frequency = spectra.hilberthuang(
+            frequency.T,
+            amplitude.T,
+            edges=edges,
+            sum_time=False,
+            sum_imfs=True,
+            mode="power",
+            sample_rate=sample_rate,
+        )
+    except (ImportError, ModuleNotFoundError, AttributeError, TypeError, ValueError):
+        return None
+    time_frequency = np.asarray(time_frequency, dtype=float)
+    if time_frequency.ndim != 2:
+        return None
+    if time_frequency.shape[0] != centers.size and time_frequency.shape[1] == centers.size:
+        time_frequency = time_frequency.T
+    if time_frequency.shape[0] != centers.size:
+        return None
+    return np.asarray(freq_centers, dtype=float), time_frequency.sum(axis=1), time_frequency
+
+
+def _stack_second_layer(values: list[np.ndarray], n_modes: int, n_samples: int) -> np.ndarray:
+    """Stack ragged second-layer IMF lists into samples x first modes x AM modes."""
+
+    max_am_modes = max((np.asarray(item).shape[0] for item in values if np.asarray(item).size), default=0)
+    stacked = np.full((n_samples, n_modes, max_am_modes), np.nan)
+    for mode_index, item in enumerate(values):
+        arr = np.asarray(item, dtype=float)
+        if arr.size == 0:
+            continue
+        stacked[:, mode_index, : arr.shape[0]] = arr.T
+    return stacked
+
+
+def _try_emd_holospectrum(
+    carrier_frequency: np.ndarray,
+    am_frequency: list[np.ndarray],
+    am_amplitude: list[np.ndarray],
+    carrier_hist: SpectrumBins,
+    am_hist: SpectrumBins,
+    sample_rate: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    """Compute Holospectrum through EMD-Python when shapes are compatible."""
+
+    try:
+        spectra = import_module("emd.spectra")
+        carrier_centers, carrier_edges = spectrum_bin_edges(carrier_hist)
+        am_centers, am_edges = spectrum_bin_edges(am_hist)
+        second_frequency = _stack_second_layer(am_frequency, carrier_frequency.shape[0], carrier_frequency.shape[1])
+        second_amplitude = _stack_second_layer(am_amplitude, carrier_frequency.shape[0], carrier_frequency.shape[1])
+        if second_frequency.shape[-1] == 0:
+            return None
+        freq_carrier, freq_am, holo = spectra.holospectrum(
+            carrier_frequency.T,
+            second_frequency,
+            second_amplitude,
+            edges=carrier_edges,
+            edges2=am_edges,
+            sum_time=True,
+            sum_first_imfs=True,
+            sum_second_imfs=True,
+            mode="power",
+            sample_rate=sample_rate,
+        )
+    except (ImportError, ModuleNotFoundError, AttributeError, TypeError, ValueError):
+        return None
+    holo = np.asarray(holo, dtype=float)
+    if holo.shape != (carrier_centers.size, am_centers.size):
+        return None
+    return np.asarray(freq_carrier, dtype=float), np.asarray(freq_am, dtype=float), holo
+
+
 def hilbert_huang_spectrum(
     frequency: np.ndarray,
     amplitude: np.ndarray,
     hist: SpectrumBins,
+    *,
+    sample_rate: float = 1.0,
+    backend: str = "auto",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Compute marginal and time-resolved Hilbert-Huang spectra.
 
@@ -113,6 +200,13 @@ def hilbert_huang_spectrum(
     amp = np.asarray(amplitude, dtype=float)
     if freq.shape != amp.shape or freq.ndim != 2:
         raise ValueError("frequency and amplitude must both have shape (n_modes, n_samples)")
+
+    if backend in {"auto", "emd-python"}:
+        external = _try_emd_hilbert_huang(freq, amp, hist, sample_rate)
+        if external is not None:
+            return external
+        if backend == "emd-python":
+            raise RuntimeError("EMD-Python could not compute the Hilbert-Huang spectrum for these inputs")
 
     centers, edges = spectrum_bin_edges(hist)
     time_frequency = np.zeros((centers.size, freq.shape[1]))
@@ -133,6 +227,9 @@ def holospectrum(
     am_amplitude: list[np.ndarray],
     carrier_hist: SpectrumBins,
     am_hist: SpectrumBins,
+    *,
+    sample_rate: float = 1.0,
+    backend: str = "auto",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Compute a time-averaged Holo-Hilbert spectrum.
 
@@ -146,6 +243,13 @@ def holospectrum(
         raise ValueError("carrier_frequency must have shape (n_modes, n_samples)")
     if len(am_frequency) != carrier.shape[0] or len(am_amplitude) != carrier.shape[0]:
         raise ValueError("second-layer lists must have one entry per carrier IMF")
+
+    if backend in {"auto", "emd-python"}:
+        external = _try_emd_holospectrum(carrier, am_frequency, am_amplitude, carrier_hist, am_hist, sample_rate)
+        if external is not None:
+            return external
+        if backend == "emd-python":
+            raise RuntimeError("EMD-Python could not compute the Holospectrum for these inputs")
 
     carrier_centers, carrier_edges = spectrum_bin_edges(carrier_hist)
     am_centers, am_edges = spectrum_bin_edges(am_hist)

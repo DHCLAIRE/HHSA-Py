@@ -13,7 +13,17 @@ from typing import Literal
 import numpy as np
 
 EMDBackend = Literal["auto", "emd-python", "pyemd"]
-EMDPythonSift = Literal["sift", "ensemble_sift", "mask_sift"]
+EMDPythonSift = Literal["sift", "ensemble_sift", "complete_ensemble_sift", "mask_sift", "iterated_mask_sift"]
+DecompositionMethod = Literal[
+    "emd",
+    "sift",
+    "ensemble_sift",
+    "complete_ensemble_sift",
+    "mask_sift",
+    "iterated_mask_sift",
+    "ceemdan",
+    "iceemdan",
+]
 
 
 def _max_imfs_for_external(max_imfs: int | None) -> int:
@@ -33,6 +43,26 @@ def _as_1d(signal: np.ndarray) -> np.ndarray:
     return x
 
 
+def _from_emd_python_modes(modes: np.ndarray, n_samples: int, max_imfs: int | None) -> np.ndarray:
+    """Convert EMD-Python's samples x modes output to modes x samples."""
+
+    if isinstance(modes, tuple):
+        arr = np.asarray(modes[0], dtype=float)
+    else:
+        arr = np.asarray(modes, dtype=float)
+    if arr.ndim == 1:
+        arr = arr[:, np.newaxis]
+    if arr.size == 0:
+        return np.empty((0, n_samples))
+    if arr.shape[0] == n_samples:
+        arr = arr.T
+    if arr.shape[1] != n_samples:
+        raise ValueError("EMD-Python returned IMFs with an unexpected sample dimension")
+    if max_imfs is not None:
+        arr = arr[:max_imfs]
+    return arr
+
+
 def _emd_with_emd_python(
     signal: np.ndarray,
     *,
@@ -42,6 +72,7 @@ def _emd_with_emd_python(
     sift_method: EMDPythonSift,
     ensemble_size: int,
     noise_width: float,
+    random_state: int | None,
     mask_freqs: np.ndarray | float | None,
     mask_amp: float,
     mask_amp_mode: str,
@@ -59,6 +90,15 @@ def _emd_with_emd_python(
             "max_imfs": max_imfs,
             "nensembles": ensemble_size,
             "ensemble_noise": noise_width,
+            "noise_seed": random_state,
+            "imf_opts": imf_opts,
+        }
+    elif sift_method == "complete_ensemble_sift":
+        kwargs = {
+            "max_imfs": max_imfs,
+            "nensembles": ensemble_size,
+            "ensemble_noise": noise_width,
+            "noise_seed": random_state,
             "imf_opts": imf_opts,
         }
     elif sift_method == "mask_sift":
@@ -69,20 +109,26 @@ def _emd_with_emd_python(
             "mask_amp_mode": mask_amp_mode,
             "imf_opts": imf_opts,
         }
+    elif sift_method == "iterated_mask_sift":
+        kwargs = {
+            "max_imfs": max_imfs,
+            "mask_0": mask_freqs,
+            "mask_amp": mask_amp,
+            "mask_amp_mode": mask_amp_mode,
+            "imf_opts": imf_opts,
+        }
     else:
-        raise ValueError("sift_method must be 'sift', 'ensemble_sift', or 'mask_sift'")
+        raise ValueError(
+            "sift_method must be 'sift', 'ensemble_sift', 'complete_ensemble_sift', "
+            "'mask_sift', or 'iterated_mask_sift'"
+        )
     try:
         modes = sift_function(x, **kwargs)
     except TypeError:
         kwargs.pop("imf_opts", None)
+        kwargs = {key: value for key, value in kwargs.items() if value is not None}
         modes = sift_function(x, **kwargs)
-    modes = np.asarray(modes, dtype=float)
-    if modes.ndim == 1:
-        modes = modes[:, np.newaxis]
-    if modes.shape[0] == x.size:
-        modes = modes.T
-    if max_imfs is not None:
-        modes = modes[:max_imfs]
+    modes = _from_emd_python_modes(modes, x.size, max_imfs)
     residue = x - modes.sum(axis=0) if modes.size else x.copy()
     return modes, residue
 
@@ -127,6 +173,7 @@ def emd(
     mask_freqs: np.ndarray | float | None = None,
     mask_amp: float = 1.0,
     mask_amp_mode: str = "ratio_sig",
+    random_state: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Decompose a signal into IMFs and a residue.
 
@@ -146,6 +193,7 @@ def emd(
                     sift_method=sift_method,
                     ensemble_size=ensemble_size,
                     noise_width=noise_width,
+                    random_state=random_state,
                     mask_freqs=mask_freqs,
                     mask_amp=mask_amp,
                     mask_amp_mode=mask_amp_mode,
@@ -177,6 +225,7 @@ def ensemble_sift(
     noise_width: float = 0.2,
     max_siftings: int = 50,
     stop_sd: float = 0.2,
+    random_state: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Decompose a signal with EMD-Python's ensemble sift."""
 
@@ -189,6 +238,32 @@ def ensemble_sift(
         sift_method="ensemble_sift",
         ensemble_size=ensemble_size,
         noise_width=noise_width,
+        random_state=random_state,
+    )
+
+
+def complete_ensemble_sift(
+    signal: np.ndarray,
+    *,
+    max_imfs: int | None = None,
+    ensemble_size: int = 64,
+    noise_width: float = 0.2,
+    max_siftings: int = 50,
+    stop_sd: float = 0.2,
+    random_state: int | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Decompose a signal with EMD-Python's complete ensemble sift."""
+
+    return emd(
+        signal,
+        max_imfs=max_imfs,
+        max_siftings=max_siftings,
+        stop_sd=stop_sd,
+        backend="emd-python",
+        sift_method="complete_ensemble_sift",
+        ensemble_size=ensemble_size,
+        noise_width=noise_width,
+        random_state=random_state,
     )
 
 
@@ -211,6 +286,31 @@ def mask_sift(
         stop_sd=stop_sd,
         backend="emd-python",
         sift_method="mask_sift",
+        mask_freqs=mask_freqs,
+        mask_amp=mask_amp,
+        mask_amp_mode=mask_amp_mode,
+    )
+
+
+def iterated_mask_sift(
+    signal: np.ndarray,
+    *,
+    max_imfs: int | None = None,
+    mask_freqs: np.ndarray | float | None = None,
+    mask_amp: float = 1.0,
+    mask_amp_mode: str = "ratio_sig",
+    max_siftings: int = 50,
+    stop_sd: float = 0.2,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Decompose a signal with EMD-Python's iterated mask sift."""
+
+    return emd(
+        signal,
+        max_imfs=max_imfs,
+        max_siftings=max_siftings,
+        stop_sd=stop_sd,
+        backend="emd-python",
+        sift_method="iterated_mask_sift",
         mask_freqs=mask_freqs,
         mask_amp=mask_amp,
         mask_amp_mode=mask_amp_mode,
@@ -391,3 +491,97 @@ def iceemdan(
     modes = np.vstack(imfs) * x_std
     residue = current_mean * x_std
     return modes, residue
+
+
+def decompose_signal(
+    signal: np.ndarray,
+    method: DecompositionMethod,
+    *,
+    max_imfs: int | None = 10,
+    ensemble_size: int = 64,
+    noise_width: float = 0.2,
+    random_state: int | None = 13,
+    max_siftings: int = 20,
+    stop_sd: float = 0.2,
+    emd_backend: EMDBackend = "auto",
+    mask_freqs: np.ndarray | float | None = None,
+    mask_amp: float = 1.0,
+    mask_amp_mode: str = "ratio_sig",
+) -> tuple[np.ndarray, np.ndarray]:
+    """Decompose a signal with one supported HHSA decomposition method."""
+
+    if method in {"emd", "sift"}:
+        return emd(
+            signal,
+            max_imfs=max_imfs,
+            max_siftings=max_siftings,
+            stop_sd=stop_sd,
+            backend=emd_backend,
+            sift_method="sift",
+        )
+    if method == "ensemble_sift":
+        return ensemble_sift(
+            signal,
+            max_imfs=max_imfs,
+            ensemble_size=ensemble_size,
+            noise_width=noise_width,
+            max_siftings=max_siftings,
+            stop_sd=stop_sd,
+            random_state=random_state,
+        )
+    if method == "complete_ensemble_sift":
+        return complete_ensemble_sift(
+            signal,
+            max_imfs=max_imfs,
+            ensemble_size=ensemble_size,
+            noise_width=noise_width,
+            max_siftings=max_siftings,
+            stop_sd=stop_sd,
+            random_state=random_state,
+        )
+    if method == "mask_sift":
+        return mask_sift(
+            signal,
+            max_imfs=max_imfs,
+            mask_freqs=mask_freqs,
+            mask_amp=mask_amp,
+            mask_amp_mode=mask_amp_mode,
+            max_siftings=max_siftings,
+            stop_sd=stop_sd,
+        )
+    if method == "iterated_mask_sift":
+        return iterated_mask_sift(
+            signal,
+            max_imfs=max_imfs,
+            mask_freqs=mask_freqs,
+            mask_amp=mask_amp,
+            mask_amp_mode=mask_amp_mode,
+            max_siftings=max_siftings,
+            stop_sd=stop_sd,
+        )
+    if method == "ceemdan":
+        return ceemdan(
+            signal,
+            max_imfs=max_imfs,
+            ensemble_size=ensemble_size,
+            noise_width=noise_width,
+            random_state=random_state,
+            max_siftings=max_siftings,
+            stop_sd=stop_sd,
+            emd_backend=emd_backend,
+        )
+    if method == "iceemdan":
+        return iceemdan(
+            signal,
+            max_imfs=max_imfs,
+            ensemble_size=ensemble_size,
+            noise_width=noise_width,
+            random_state=random_state,
+            max_siftings=max_siftings,
+            stop_sd=stop_sd,
+            emd_backend=emd_backend,
+        )
+    raise ValueError(
+        "method must be 'emd', 'sift', 'ensemble_sift', 'complete_ensemble_sift', "
+        "'mask_sift', 'iterated_mask_sift', 'ceemdan', or 'iceemdan'"
+    )
