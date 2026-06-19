@@ -1,7 +1,18 @@
 import numpy as np
 import pytest
 
-from hhsa import ceemdan, generalized_zero_crossing, iceemdan, mode_energy, quadrature_frequency, run_hhsa, run_hhsa_dataset
+from hhsa import (
+    ceemdan,
+    generalized_zero_crossing,
+    hhsa_feature_matrix,
+    hhsa_permutation_test,
+    hhsa_t_test,
+    iceemdan,
+    mode_energy,
+    quadrature_frequency,
+    run_hhsa,
+    run_hhsa_dataset,
+)
 
 
 def test_frequency_estimators_track_sine():
@@ -115,3 +126,27 @@ def test_ceemdan_uses_external_pyemd_shape():
 
     assert imfs.shape[1] == x.size
     np.testing.assert_allclose(imfs.sum(axis=0) + residue, x, atol=1e-10)
+
+
+def test_hhsa_statistics_compare_result_groups():
+    sample_rate = 100.0
+    t = np.arange(0, 1, 1 / sample_rate)
+    base = np.sin(2 * np.pi * 8 * t)
+    stronger = 1.5 * np.sin(2 * np.pi * 8 * t)
+
+    group_a = [
+        run_hhsa(base, sample_rate, decomposition="sift", frequency_method="quad", max_imfs=2, max_am_imfs=1),
+        run_hhsa(1.1 * base, sample_rate, decomposition="sift", frequency_method="quad", max_imfs=2, max_am_imfs=1),
+    ]
+    group_b = [
+        run_hhsa(stronger, sample_rate, decomposition="sift", frequency_method="quad", max_imfs=2, max_am_imfs=1),
+        run_hhsa(1.1 * stronger, sample_rate, decomposition="sift", frequency_method="quad", max_imfs=2, max_am_imfs=1),
+    ]
+
+    matrix = hhsa_feature_matrix(group_a, feature="mode_energy")
+    t_result = hhsa_t_test(group_a, group_b, feature="mode_energy")
+    permutation = hhsa_permutation_test(group_a, group_b, feature="mode_energy", n_permutations=20, random_state=1)
+
+    assert matrix.shape[0] == 2
+    assert t_result.pvalue.shape == t_result.statistic.shape
+    assert permutation.pvalue.shape == permutation.statistic.shape

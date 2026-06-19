@@ -2,7 +2,22 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
+from scipy import stats
+
+
+@dataclass(frozen=True)
+class StatisticalTestResult:
+    """Container for feature-wise HHSA statistical test results."""
+
+    statistic: np.ndarray
+    pvalue: np.ndarray
+    feature: str
+    method: str
+    n_group_a: int
+    n_group_b: int
 
 
 def mode_energy(modes: np.ndarray) -> np.ndarray:
@@ -162,3 +177,110 @@ def holospectrum(
                 holo[carrier_bin, am_bin] += am_a**2
 
     return carrier_centers, am_centers, holo
+
+
+def hhsa_feature(result: object, feature: str = "mode_energy") -> np.ndarray:
+    """Extract a flattened statistical feature vector from one HHSA result."""
+
+    if feature == "mode_energy":
+        return mode_energy(result.imfs)
+    if feature == "marginal":
+        return np.asarray(result.marginal, dtype=float).ravel()
+    if feature == "hht":
+        return np.asarray(result.hht, dtype=float).ravel()
+    if feature == "holospectrum":
+        return np.asarray(result.holospectrum, dtype=float).ravel()
+    if feature == "am_frequency":
+        vectors = [np.asarray(freq, dtype=float).ravel() for freq in result.am_frequency if np.asarray(freq).size]
+        if not vectors:
+            return np.empty(0)
+        return np.concatenate(vectors)
+    raise ValueError("feature must be 'mode_energy', 'marginal', 'hht', 'holospectrum', or 'am_frequency'")
+
+
+def _as_result_list(results: object | list[object]) -> list[object]:
+    """Normalize one HHSA result or a list of results into a list."""
+
+    return results if isinstance(results, list) else [results]
+
+
+def hhsa_feature_matrix(results: object | list[object], feature: str = "mode_energy") -> np.ndarray:
+    """Stack HHSA feature vectors into a matrix, padding shorter rows with NaN."""
+
+    vectors = [hhsa_feature(result, feature=feature) for result in _as_result_list(results)]
+    if not vectors:
+        return np.empty((0, 0))
+    width = max((vector.size for vector in vectors), default=0)
+    matrix = np.full((len(vectors), width), np.nan)
+    for row, vector in enumerate(vectors):
+        matrix[row, : vector.size] = vector
+    return matrix
+
+
+def hhsa_t_test(
+    group_a: object | list[object],
+    group_b: object | list[object],
+    *,
+    feature: str = "mode_energy",
+    equal_var: bool = False,
+) -> StatisticalTestResult:
+    """Run a feature-wise independent t-test between two HHSA result groups."""
+
+    a = hhsa_feature_matrix(group_a, feature=feature)
+    b = hhsa_feature_matrix(group_b, feature=feature)
+    width = max(a.shape[1], b.shape[1])
+    if a.shape[1] != width:
+        a = np.pad(a, ((0, 0), (0, width - a.shape[1])), constant_values=np.nan)
+    if b.shape[1] != width:
+        b = np.pad(b, ((0, 0), (0, width - b.shape[1])), constant_values=np.nan)
+    statistic, pvalue = stats.ttest_ind(a, b, axis=0, equal_var=equal_var, nan_policy="omit")
+    return StatisticalTestResult(
+        statistic=np.asarray(statistic, dtype=float),
+        pvalue=np.asarray(pvalue, dtype=float),
+        feature=feature,
+        method="welch_t_test" if not equal_var else "student_t_test",
+        n_group_a=a.shape[0],
+        n_group_b=b.shape[0],
+    )
+
+
+def hhsa_permutation_test(
+    group_a: object | list[object],
+    group_b: object | list[object],
+    *,
+    feature: str = "mode_energy",
+    n_permutations: int = 1000,
+    random_state: int | None = None,
+) -> StatisticalTestResult:
+    """Run a two-sided feature-wise permutation test between HHSA result groups."""
+
+    if n_permutations < 1:
+        raise ValueError("n_permutations must be positive")
+    rng = np.random.default_rng(random_state)
+    a = hhsa_feature_matrix(group_a, feature=feature)
+    b = hhsa_feature_matrix(group_b, feature=feature)
+    width = max(a.shape[1], b.shape[1])
+    if a.shape[1] != width:
+        a = np.pad(a, ((0, 0), (0, width - a.shape[1])), constant_values=np.nan)
+    if b.shape[1] != width:
+        b = np.pad(b, ((0, 0), (0, width - b.shape[1])), constant_values=np.nan)
+
+    combined = np.vstack([a, b])
+    n_a = a.shape[0]
+    observed = np.nanmean(a, axis=0) - np.nanmean(b, axis=0)
+    extreme = np.zeros(width, dtype=int)
+    for _ in range(n_permutations):
+        order = rng.permutation(combined.shape[0])
+        perm_a = combined[order[:n_a]]
+        perm_b = combined[order[n_a:]]
+        permuted = np.nanmean(perm_a, axis=0) - np.nanmean(perm_b, axis=0)
+        extreme += np.abs(permuted) >= np.abs(observed)
+    pvalue = (extreme + 1) / (n_permutations + 1)
+    return StatisticalTestResult(
+        statistic=observed,
+        pvalue=pvalue,
+        feature=feature,
+        method="permutation_mean_difference",
+        n_group_a=a.shape[0],
+        n_group_b=b.shape[0],
+    )

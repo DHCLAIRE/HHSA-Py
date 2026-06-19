@@ -4,6 +4,11 @@ from .decomposition import ceemdan, emd, ensemble_sift, iceemdan, mask_sift
 from .frequency import frequency_transform, generalized_zero_crossing, quadrature_frequency
 from .pipeline import HHSAResult, as_channel_matrix, run_hhsa, run_hhsa_dataset
 from .statistics import (
+    StatisticalTestResult,
+    hhsa_feature,
+    hhsa_feature_matrix,
+    hhsa_permutation_test,
+    hhsa_t_test,
     hilbert_huang_spectrum,
     holospectrum,
     marginal_spectrum,
@@ -15,12 +20,17 @@ from .statistics import (
 
 __all__ = [
     "HHSAResult",
+    "StatisticalTestResult",
     "as_channel_matrix",
     "ceemdan",
     "emd",
     "ensemble_sift",
     "frequency_transform",
     "generalized_zero_crossing",
+    "hhsa_feature",
+    "hhsa_feature_matrix",
+    "hhsa_permutation_test",
+    "hhsa_t_test",
     "hilbert_huang_spectrum",
     "holospectrum",
     "iceemdan",

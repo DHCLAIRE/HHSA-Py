@@ -11,7 +11,16 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from hhsa import HHSAResult, as_channel_matrix, mode_energy, run_hhsa, run_hhsa_dataset
+from hhsa import (
+    HHSAResult,
+    StatisticalTestResult,
+    as_channel_matrix,
+    hhsa_permutation_test,
+    hhsa_t_test,
+    mode_energy,
+    run_hhsa,
+    run_hhsa_dataset,
+)
 from hhsa.decomposition import EMDBackend
 from hhsa.pipeline import ChannelAxis
 
@@ -172,3 +181,34 @@ class HHSAPipeline:
             "holospectrum": result.holospectrum,
             "reconstruction_error": result.reconstruction_error,
         }
+
+    def t_test(
+        self,
+        group_a: HHSAResult | list[HHSAResult],
+        group_b: HHSAResult | list[HHSAResult],
+        *,
+        feature: str = "mode_energy",
+        equal_var: bool = False,
+    ) -> StatisticalTestResult:
+        """Run a feature-wise independent t-test between two HHSA groups."""
+
+        return hhsa_t_test(group_a, group_b, feature=feature, equal_var=equal_var)
+
+    def permutation_test(
+        self,
+        group_a: HHSAResult | list[HHSAResult],
+        group_b: HHSAResult | list[HHSAResult],
+        *,
+        feature: str = "mode_energy",
+        n_permutations: int = 1000,
+        random_state: int | None = None,
+    ) -> StatisticalTestResult:
+        """Run a two-sided feature-wise permutation test between two HHSA groups."""
+
+        return hhsa_permutation_test(
+            group_a,
+            group_b,
+            feature=feature,
+            n_permutations=n_permutations,
+            random_state=random_state,
+        )

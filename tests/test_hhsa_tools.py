@@ -42,3 +42,25 @@ def test_hhsa_pipeline_fit_accepts_audio_style_array():
 
     assert len(results) == 2
     assert len(summaries) == 2
+
+
+def test_hhsa_pipeline_statistics_methods():
+    sample_rate = 100.0
+    t = np.arange(0, 1, 1 / sample_rate)
+    group_a = np.vstack([np.sin(2 * np.pi * 8 * t), 1.1 * np.sin(2 * np.pi * 8 * t)])
+    group_b = np.vstack([1.4 * np.sin(2 * np.pi * 8 * t), 1.5 * np.sin(2 * np.pi * 8 * t)])
+    pipeline = HHSAPipeline(
+        sample_rate=sample_rate,
+        decomposition="sift",
+        frequency_method="quad",
+        max_imfs=2,
+        max_am_imfs=1,
+    )
+
+    results_a = pipeline.fit(group_a, channel_axis="first")
+    results_b = pipeline.fit(group_b, channel_axis="first")
+    t_result = pipeline.t_test(results_a, results_b)
+    permutation = pipeline.permutation_test(results_a, results_b, n_permutations=20, random_state=2)
+
+    assert t_result.method == "welch_t_test"
+    assert permutation.method == "permutation_mean_difference"

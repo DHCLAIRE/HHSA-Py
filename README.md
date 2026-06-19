@@ -302,6 +302,30 @@ pipeline = HHSAPipeline(sample_rate=44100, decomposition="iceemdan", max_imfs=10
 results = pipeline.fit(stereo_array, channel_axis="last")
 ```
 
+### Tutorial 7: Run Group Statistics
+
+After running HHSA for two groups, compare features such as `mode_energy`,
+`marginal`, `hht`, `holospectrum`, or `am_frequency`.
+
+```python
+pipeline = HHSAPipeline(sample_rate=sample_rate, decomposition="sift", max_imfs=10)
+
+group_a_results = pipeline.fit(group_a_array, channel_axis="first")
+group_b_results = pipeline.fit(group_b_array, channel_axis="first")
+
+t_result = pipeline.t_test(group_a_results, group_b_results, feature="mode_energy")
+perm_result = pipeline.permutation_test(
+    group_a_results,
+    group_b_results,
+    feature="mode_energy",
+    n_permutations=1000,
+    random_state=13,
+)
+
+print(t_result.statistic, t_result.pvalue)
+print(perm_result.statistic, perm_result.pvalue)
+```
+
 ## HHSA Workflow
 
 1. Prepare a one-dimensional signal.
@@ -389,6 +413,8 @@ Recommended first MEG verification:
 - `HHSAPipeline.mask_freqs`, `mask_amp`, `mask_amp_mode`: mask-sift controls passed to EMD-Python when `decomposition="mask_sift"`.
 - `HHSAPipeline.fit(signal)`: runs HHSA with the pipeline's stored decomposition, frequency, and ensemble parameters. It accepts 1-D arrays, multi-channel arrays, WAV paths, and MNE Raw/Epochs/Evoked-like objects.
 - `HHSAPipeline.summarize(result)`: returns common summary outputs from an `HHSAResult`, including mode energy, frequency bins, marginal spectrum, HHT, holospectrum, and reconstruction error. For multi-channel input, it returns one summary per channel.
+- `HHSAPipeline.t_test(group_a, group_b, feature=...)`: runs a feature-wise independent t-test on HHSA result groups.
+- `HHSAPipeline.permutation_test(group_a, group_b, feature=...)`: runs a two-sided feature-wise permutation test on HHSA result groups.
 
 ### `hhsa.pipeline`
 
@@ -416,6 +442,10 @@ Recommended first MEG verification:
 ### `hhsa.statistics`
 
 - `mode_energy(modes)`: returns sum-of-squares energy for each IMF.
+- `hhsa_feature(result, feature=...)`: extracts one statistical feature vector from an `HHSAResult`.
+- `hhsa_feature_matrix(results, feature=...)`: stacks HHSA result features into a padded matrix.
+- `hhsa_t_test(group_a, group_b, feature=...)`: runs a feature-wise independent t-test on two HHSA result groups.
+- `hhsa_permutation_test(group_a, group_b, feature=...)`: runs a two-sided feature-wise permutation test on two HHSA result groups.
 - `normalized_entropy(values)`: computes Shannon entropy normalized to `[0, 1]`.
 - `orthogonality_index(modes, signal)`: estimates how much IMF energy leaks across modes; lower values indicate cleaner separation.
 - `marginal_spectrum(frequency, amplitude, ...)`: computes a simple Hilbert marginal spectrum from instantaneous frequency and amplitude arrays.
