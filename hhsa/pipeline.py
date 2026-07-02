@@ -178,7 +178,6 @@ def run_hhsa(
 
     imfs, residue = decompose_signal(
         x,
-        sample_rate,
         decomposition,
         max_imfs=max_imfs,
         ensemble_size=ensemble_size,
