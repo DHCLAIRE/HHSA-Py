@@ -225,6 +225,9 @@ def _emd_with_emd_python(
         kwargs.pop("imf_opts", None)
         kwargs = {key: value for key, value in kwargs.items() if value is not None}
         modes = sift_function(x, **kwargs)
+    except UnboundLocalError:
+        # Catch the emd-python bug when it fails to find any IMFs
+        return np.empty((0, x.size)), x.copy()
     modes = _from_emd_python_modes(modes, x.size, max_imfs)
     residue = x - modes.sum(axis=0) if modes.size else x.copy()
     return modes, residue
